@@ -1,0 +1,26 @@
+$Id: vas_examples.txt 123 2010-07-27 04:44:41Z yamamoto2 $
+
+Vastsky cli usage examples
+
+- create a 1TB logical volume with redundancy=2.
+
+	# lvol_create --redundancy 2 foo 1000
+	lvol-0000001a
+	#
+
+- show the list of logical volumes on the system.
+
+	# lvol_list
+	lvolid         lvolname       redundancy capacity  hsvrid        failure
+	lvol-0000001a  foo                     2  1000 GB  ---           ---
+
+- attach the logical volume to the local machine.
+  (assuming the local machine is a head server)
+
+	# lvol_attach foo $(cat /var/lib/vas/hsvrid)
+	#
+
+- use the attached logical volume.
+
+	# mkfs.ext3 /dev/vas/foo
+

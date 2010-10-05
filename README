@@ -1,0 +1,10 @@
+$Id: README 66 2010-07-08 04:21:25Z yamamoto2 $
+
+vastsky
+
+CAUTION: this software is in early development and thus is still not
+suitable for production use.  Even the on-disk format will likely
+change without consideration of backwards-compatibility.
+
+See doc/vas_overview.txt for the overview of Vastsky.
+See doc/vas_install.txt for requirements and how-to-install.

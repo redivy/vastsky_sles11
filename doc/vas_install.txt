@@ -1,0 +1,156 @@
+$Id: vas_install.txt 127 2010-07-27 06:23:49Z yamamoto2 $
+
+Installation:
+
+On each server,
+
+- Install required software
+	- CentOS or a similar Linux distribution
+	    Requirements:
+	    - (head server only) Working md driver and mdadm
+		- For your convenience, there are some binary and source RPMs
+		  with the following problems fixed available at
+		  https://sourceforge.net/projects/vastsky/files/CentOS_5.3_RPMs_with_md_problems_fixed/
+		- Older versions of md driver and mdadm have problems which
+		  causes a limitation about the number of device instances.
+		  It limits the size and number of Vastsky's logical volumes
+		  severely.
+		  The bug in mdadm has been fixed before mdadm-3.0-rc1.
+		  (mdadm a56fb7ec54a1cde199377945e53553e2a39fa509)
+		  mdadm-2.6.9-3.el5 shipped with CentOS 5.5 still has the bug.
+		  The limitation in md driver has been fixed between linux
+		  v2.6.18 and v2.6.19.
+		  (linux-2.6 e8703fe1f5cdcff686f7eb0a46487b5a04a9324a)
+		  kernel-2.6.18-194.el5 shipped with CentOS 5.5 still has
+		  the limitation.
+		- XCP 0.1.1's dom0 kernel is known to have a broken
+		  version of md driver, with which Vastsky doesn't work.
+		  XCP 0.5's dom0 should be ok.
+	    - (head server only) Working device mapper
+		In particular, linear and multipath targets.
+	- Python
+		CentOS package: python
+	- (storage manager only) SQLite and its Python binding
+		CentOS package: sqlite
+		CentOS package: python-sqlite
+	- (head server only) iSCSI initiator
+		CentOS package: iscsi-initiator-utils
+	- (storage server only) IET
+		http://iscsitarget.sourceforge.net/
+		It seems that CentOS has no official package for this.
+
+- (head server and storage server)
+	- Configure eg. /etc/hosts so that your hostnames are resolvable.
+	  If your hostname is "FOO", "FOO-data1" and "FOO-data2" should
+	  be resolvable to the IPv4 addresses on which agents listen on.
+	  If you don't need network path redundancy, you can use the same
+	  address for each of these names.
+
+- (head server only)
+	- Configure udev and multipath so that iSCSI login automatically
+	  creates multipath instances on it.
+	  This step is not necessary if you solely use our XCP SR driver,
+	  which is found in the xcp/ directory of the Vastsky source code
+	  distributions.
+
+	  The following is an example of /etc/multipath.conf.
+
+		    blacklist {
+			    device {
+				    vendor "ATA"
+				    product "*"
+			    }
+			    devnode "^(dm-|md|ram|sr)[0-9]*"
+		    }
+		    devices {
+			    device {
+				    vendor			"IET"
+				    product			"VIRTUAL-DISK"
+				    getuid_callout		"/sbin/scsi_id -g -u -s /block/%n"
+				    failback		immediate
+				    path_grouping_policy	multibus
+			    }
+		    }
+
+- (storage server only)
+	- Prepare /var/lib/vas/register_device_list, which specifies the
+	  list of local disks to be exported and used for Vastsky.
+	  each line of the file should start with "pdsk," which is followed
+	  by a local pathname of the disk.  It's recommended to use
+	  /dev/disk/by-id/ pathnames.
+	  
+	  Example:
+	  pdsk,/dev/disk/by-id/scsi-SATA_Hitachi_HDS7220_JK1101YAG3VXZS
+	  pdsk,/dev/disk/by-id/scsi-SATA_Hitachi_HDS7220_JK1101YAG9GB0V
+	  pdsk,/dev/disk/by-id/scsi-SATA_Hitachi_HDS7220_JK1101YAG1JNHV
+	  pdsk,/dev/disk/by-id/scsi-SATA_Hitachi_HDS7220_JK1101YAG70H0V
+
+- Prepare configuration files
+	- /etc/vas.conf
+		Copy from examples/ and modify host_list: to the actual
+		IPv4 address of your storage manager.
+
+- Tweak your network filter etc to allow ports specified in /etc/vas.conf
+  if necessary.
+
+- Install vastsky either from source or RPMs.
+
+    - Install from source
+
+	- Checkout the code
+		eg. /tmp/vastsky
+
+	- Install Vastsky
+		# cd /tmp/vastsky/src
+		# ./test_install.py
+
+    - Install from RPMs.
+
+	- Install some of the following RPMs.
+
+		vastsky-common	Common library and configuration
+		vastsky-hsvr	Head server agent
+		vastsky-ssvr	Storage server agent
+		vastsky-sm	Storage manager
+		vastsky-cli	Storage manager command-line clients
+		vastsky-doc	Documentations
+
+	  Basically,
+	  - -common package is required by other packages.
+	  - Head servers need -hsvr package.
+	  - Storage servers need -ssvr package.
+	  - The storage manager needs and -sm package.
+	  - The host on which you want to run user commands needs -cli package.
+
+- (storage manager)
+	- Initialize the storage manager db.
+
+	# service vas_sm init
+
+- Start Vastsky daemons
+	
+	(storage manager)
+	# service vas_sm start
+
+	(head server)
+	# service vas_hsvr start
+
+	(storage server)
+	# service vas_ssvr start
+
+	If you installed vastsky using test_install.py, you likely want to
+	use chkconfig to make them run automatically on the system startup.
+	RPMs automatically do it for you.
+
+- Now, you should be able to use vastsky user commands described in
+  vas_cli.txt.
+
+- Vastsky zero-fills physical disks before allowing users to use them.
+  Depending the speed and capacity of the disks, it can take hours.
+  Be patient.
+
+  You can check the completion by running pdsk_list command and checking
+  the 'available' column.  The value will get non-zero when zero-filling of
+  the disk completed.
+
+- Enjoy!

@@ -1,0 +1,6 @@
+$Id: vas_roadmap.txt 93 2010-07-16 00:38:47Z yamamoto2 $
+
+Vastsky roadmap (aka pie in the sky)
+
+- snapshot
+	probably using dm-snapshot kernel module.

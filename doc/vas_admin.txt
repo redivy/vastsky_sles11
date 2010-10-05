@@ -1,0 +1,40 @@
+$Id: vas_admin.txt 92 2010-07-16 00:37:58Z yamamoto2 $
+
+Vastsky how-to for administrators
+
+- Power-off the whole system
+
+	Run "service vas_sm shudown" on the storage manager and then
+	shutdown each servers.
+
+- Power-on the whole system
+
+	Simply power-on each servers.  You can safely start servers
+	in any order.
+
+- Watch events like hardware failures
+
+	You can use list-type commands like hsvr_list, ssvr_list and
+	pdsk_list to check the status of resources.
+
+- Add a new head or storage server to the system
+
+	Simply set up the server as documented in vas_install.txt,
+	connect it to the network, and turn it on.  On startup,
+	the server will automatically register itself to the storage manager.
+
+- Remove a head or storage server from the system
+
+	CAVEAT: When you want to remove a storage server, be careful about
+	data redundancy to avoid data-loss.
+
+	Disconnect the server from the network and wait until its status
+	become OFFLINE.  You can check the server status with hsvr_list or
+	ssvr_list command.  And then use hsvr_delete or ssvr_delete command
+	to clean up the corresponding server record in the database.
+
+- Replace a broken hardware
+
+	Remove the whole server from the system.
+	After fixing the broken hardware, you can re-install it as a new
+	server.

@@ -1,0 +1,344 @@
+$Id: vas_cli.txt 123 2010-07-27 04:44:41Z yamamoto2 $
+
+Vastsky Command Reference Manual
+================================
+
+This documentation describes vastsky user commands.
+See vas_examples.txt for some usage examples.
+
+Logical volume operations
+- lvol_create create a logical volume
+- lvol_delete delete a logical volume
+- lvol_attach attach a logical volume
+- lvol_detach detach a logical volume
+- lvol_list   list logical volumes
+- lvol_show   show details of a logical volume
+
+Resource info retrieval
+- hsvr_list   list head servers
+- ssvr_list   list storage servers
+- pdsk_list   list physical disks
+
+Resource deletion
+- hsvr_delete  delete a head server
+- ssvr_delete  delete a storage server
+- pdsk_delete  delete a physical disk
+
+Note that resources are automatically registered by head servers and
+storage servers on their startup.  Thus there are no "pdsk_create" style
+user commands.
+
+
+lvol_create
+-----------
+
+<synopsis>
+    lvol_create [options] lvolname capacity
+
+<description>
+    Create a logical volume.
+
+    <lvolname> is the logical volume name of the logical volume.
+    Logical volume names should be a system-wide unique string up to 64
+    characters.  Only alphanumeric characters and ".-_" can be used.
+    Logical volume names which can be interpreted as a logical volume id
+    can't be used.  (eg. "lvol-12345678")
+
+    <capacity> specifies the capacity of the logical volume in GB.
+    It will be automatically rounded up to a multiple of 10GB.
+
+    On a successful exit, lvol_create outputs the logical volume id
+    of the created logical volume.
+
+<options>
+    -h | --help  Show usage
+    --redundancy N  Specifies the redundancy of the logical volume.
+		    The default is 3.
+
+
+lvol_delete
+-----------
+
+<synopsis>
+    lvol_delete [options] lvol
+
+<description>
+    Delete the logical volume specified by <lvol>.
+    <lvol> should be either a logical volume id or a logical volume name.
+    A logical volume attached to the head server can't be deleted.
+
+<options>
+    -h | --help  show usage
+
+
+lvol_attach
+-----------
+
+<synopsis>
+    lvol_attach [options] lvol hsvrid
+
+<description>
+    Attach the logical volume specified by <lvol> to the head server specified
+    by <hsvrid>.
+    <lvol> should be either a logical volume id or a logical volume name.
+    A logical volume attached to the other head server can't be attached.
+
+<options>
+    -h | --help  show usage
+
+
+lvol_detach
+-----------
+
+<synopsis>
+    lvol_detach [options] lvol
+
+<description>
+    Detach the logical volume specified by <lvol>.
+    <lvol> should be either a logical volume id or a logical volume name.
+    A logical volume currently being used on the head server (eg. being
+    mounted) can't be detached.
+    If the logical volume is not currently attached, lvol_detach will
+    succeed.
+
+<options>
+    -h | --help  show usage
+
+
+lvol_list
+---------
+
+<synopsis>
+    lvol_list [options] [lvol]
+
+<description>
+    List logical volumes.
+    If <lvol> is specified, only list the logical volume specified.
+    Otherwise, show all logical volumes in the system.
+    <lvol> should be either a logical volume id or a logical volume name.
+
+------------------------------------------------------------------------------------------
+lvolid         lvolname       redundancy capacity  hsvrid        failure     
+lvol-00000079  foo                     3    30 GB  ---           ---         
+lvol-0000008b  bar                     2    10 GB  ---           ---         
+-------------------------------------------------------------------------------------------
+
+    - lvolid      logical volume id
+    - lvolname    logical volume name
+    - redundancy  redundancy
+    - capacity    the capacity of the logical volume in GB
+    - hsvrid      The head server to which the logical volume is currently
+		  attached.  If the logical volume is not currently attached,
+		  "---" is shown.  If the logical volume is currently being
+		  attached, "+" is prepended to the head server id.  If the
+		  logical volume is currently being detached, "-" is prepended
+		  to the head server id.
+    - failure     if there's any broken disk extents
+
+<options>
+    -h | --help  show usage
+
+
+lvol_show
+---------
+
+<synopsis>
+    lvol_show [options] lvol
+
+<description>
+    Show details of the logical volume.
+    <lvol> should be either a logical volume id or a logical volume name.
+
+    The following is an output of lvol_show.
+
+----------------------------------------------------------------------------------------------
+lvolid: lvol-00000071 lvol_name: vol-0002 capacity: 10 GB redundancy: 3
+mirror           offset capacity | disk-extent    physical-disk    offset server         sync 
+mirr-00000072      0 GB    10 GB |                                                            
+                                 | dext-0000005f  pdsk-0000000b     40 GB ssvr-00000005  VALID
+                                 | dext-00000060  pdsk-0000000e     40 GB ssvr-00000006  VALID
+                                 | dext-0000006e  pdsk-00000002     50 GB ssvr-00000002  INVALID
+-----------------------------------------------------------------------------------------------
+
+  The first line is a summary of the logical volume.
+
+  The rest is the current configuration of mirrors, sorted by the offset in
+  the logical volume.
+
+    * mirror    mirror volume id.
+    * offset    the offset in the logical volume.
+    * capacity  the size of the mirror volume.
+
+    * disk-extent    disk extent id
+    * physical-disk  the physical disk on which the extent is
+    * offset         the offset in the physical disk
+    * server         the storage server to which the physical disk is attached
+    * sync           the status of the extent
+           VALID    normal
+           INVALID  not in-sync yet
+
+<options>
+    -h | --help  show usage
+
+
+hsvr_list
+---------
+
+<synopsis>
+    hsvr_list [options] [hsvrid]
+
+<description>
+    List head servers.
+    If <hsvrid> is specified, only list the specified head server.
+    Otherwise, list all head servers in the system.
+
+    The following is an output of hsvr_list.
+
+-------------------------------------------------------------
+hsvrid         priority  ip_data_1     ip_data_2     resync
+hsvr-00000002  HIGH      192.168.20.2  10.100.20.2       0
+hsvr-00000003  HIGH      192.168.20.1  10.100.20.1       0
+hsvr-00000004  HIGH      192.168.20.5  10.100.20.5       0
+hsvr-00000005  HIGH      192.168.20.3  10.100.20.3       0
+hsvr-00000006  HIGH      192.168.20.4  10.100.20.4       0
+-------------------------------------------------------------
+
+  - hsvrid    head server id.
+  - priority  the status of the head server
+       HIGH     working normally
+       OFFLINE  being down
+  - ip_data_1, ip_data_2  ip addresses
+  - resync    the number of mirror extents being resync-ed
+
+<options>
+    -h | --help  show usage
+
+
+ssvr_list
+---------
+
+<synopsis>
+    ssvr_list [options] [ssvrid]
+
+<description>
+    List storage servers.
+    If <ssvrid> is specified, only list the specified storage server.
+    Otherwise, list all storage servers in the system.
+
+    The following is an output of ssvr_list
+
+--------------------------------------------------------------------------------------
+total 2831 GB  available 2803 GB use% 0%       
+ssvrid         priority  ip_data_1     ip_data_2     resync   capacity  available  use%
+ssvr-00000002  HIGH      192.168.10.8  10.100.10.8       0     447 GB     442 GB    1%
+ssvr-00000003  HIGH      192.168.10.5  10.100.10.5       0     447 GB     442 GB    1%
+ssvr-00000004  HIGH      192.168.10.6  10.100.10.6       0     447 GB     443 GB    0%
+ssvr-00000005  HIGH      192.168.10.3  10.100.10.3       0     447 GB     443 GB    0%
+ssvr-00000006  HIGH      192.168.10.7  10.100.10.7       0     447 GB     443 GB    0%
+ssvr-00000007  HIGH      192.168.10.4  10.100.10.4       0     596 GB     590 GB    1%
+----------------------------------------------------------------------------------------
+
+  The first line is a summary of storage servers being shown.
+
+  - ssvrid     storage server id
+  - priority   the status of the storage server
+        HIGH     working normally
+        OFFLINE  being down
+        HALT     stopped due to vastsky system shutdown
+  - ip_data_1, ip_data_2   ip addresses
+  - resync     the number of mirror extents being resync-ed
+  - capacity   the total capacity of physical disks attached to the storage
+	       server
+  - available  the total available space of physical disks attached to the
+	       storage server
+  - use%       the percentage of currently in-use space of physical disks
+	       attached to the storage server
+
+<options>
+    -h | --help  show usage
+
+
+pdsk_list
+---------
+
+<synopsis>
+    pdsk_list [options] [ssvrid]
+
+<description>
+    List physical disks.
+    If <ssvrid> is specified, only list physical disks attached to the
+    specified storage server. Otherwise, list all physical disks in the system.
+
+    The following is an output of pdsk_list
+
+---------------------------------------------------------------------------------------------
+total 7485 GB  available 6765 GB use% 9%       
+pdskid         ssvrid         priority resync   capacity  available  use% local_path        
+pdsk-00000002  ssvr-00000002  HIGH          0     499 GB     449 GB   10% /dev/disk/by-id/VAS-DISK-ssvr-00000002-1
+pdsk-00000003  ssvr-00000002  HIGH          0     499 GB     449 GB   10% /dev/disk/by-id/VAS-DISK-ssvr-00000002-2
+pdsk-00000004  ssvr-00000002  HIGH          0     499 GB     449 GB   10% /dev/disk/by-id/VAS-DISK-ssvr-00000002-3
+pdsk-00000005  ssvr-00000003  HIGH          0     499 GB     449 GB   10% /dev/disk/by-id/VAS-DISK-ssvr-00000003-1
+pdsk-00000006  ssvr-00000003  HIGH          0     499 GB     449 GB   10% /dev/disk/by-id/VAS-DISK-ssvr-00000003-2
+pdsk
+-----------------------------------------------------------------------------------------------
+
+  the first line is a summary of physical disks being shown.
+
+  - pdskid      physical disk id
+  - ssvrid      storage server id
+  - priority    The status of the physical disk. One of:
+         HIGH     working normally
+         LOW      working but has broken sectors
+         OFFLINE  being down
+         HALT     stopped due to vastsky system shutdown
+         FAULTY   broken
+  - resync      the number of mirror extents being resync-ed
+  - capacity    the capacity of the physical disk
+  - available   the available space of the physical disk
+  - use%        the percentage of capacity currently in-use
+  - local_path  the pathname of the physical disk on the storage server
+
+<options>
+    -h | --help  show usage
+
+
+hsvr_delete
+-----------
+
+<synopsis>
+    hsvr_delete [options] hsvrid
+
+<description>
+    Delete the head server specified by <hsvrid>.
+    A head server can't be deleted unless its status is OFFLINE.
+
+<options>
+    -h | --help  show usage
+
+
+ssvr_delete
+-----------
+
+<synopsis>
+    ssvr_delete [options] ssvrid
+
+<description>
+    Delete the storage server specified by <ssvrid>.
+    A storage server can't be deleted unless its status is OFFLINE.
+
+<options>
+    -h | --help  show usage
+
+
+pdsk_delete
+-----------
+
+<synopsis>
+    pdsk_delete [options] pdskid
+
+<description>
+    Delete the physical disk specified by <pdskid>.
+    A physical disk can't be deleted unless its status is OFFLINE or FAULTY.
+
+<options>
+    -h | --help  show usage

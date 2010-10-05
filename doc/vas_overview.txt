@@ -1,0 +1,50 @@
+$Id: vas_overview.txt 98 2010-07-16 02:12:50Z yamamoto2 $
+
+Overview:
+
+Vastsky is a linux-based cluster storage system, which provides logical
+volumes (linux block devices) to users by aggregating disks over a network.
+
+A vastsky system consists of three kinds of servers;
+	- storage manager
+	- head servers
+	- storage servers
+Vastsky assumes that the servers are connected each other by a mostly-flat
+network.  (eg. an ethernet segment)
+
+A storage manager maintains a database which describes physical
+and logical resources in a system, e.g. servers, disks, logical volumes.
+It serves xml-rpc based API that operates on resources, e.g. create and
+attach logical volumes.
+
+Normally there should be only one storage manager on a Vastsky system.
+Vastsky currently does not provide any redundancy for the storage manager
+itself.  It might be a good idea to consider to use external HA solutions
+for this.
+
+Head servers run user applications which actually use Vastsky logical
+volumes.
+
+Storage servers have physical disks which are used to store user data.
+They are exported over the network and used to provide logical volumes
+on head servers.  Anything which Linux recognizes as a block device can
+be used as vastsky physical disks.
+
+
+Redundancy, fault detection and recovery:
+
+Vastsky mirrors user data to three storage servers by default.
+Vastsky attempts to detect hardware failures including broken disks.
+On a failure, the storage manager attempts to reconfigure mirrors
+by allocating new extents from other disks automatically.
+
+Vastsky can be configured to use two networks (e.g. two independent
+ethernet segments) for redundancy.  When one network is down Vastsky
+will attempt to use the other network transparently to users.
+
+The storage manager periodically checks if each head and storage servers
+are responsive.  Disks on unresponsive storage servers are considered
+broken and the mirror reconfiguration mentioned above will happen.
+
+Vastsky provides XML-RPC based API, which allows external monitoring
+programs report resource failures.

@@ -1,0 +1,936 @@
+$Id: vas_api.txt 94 2010-07-16 00:58:37Z yamamoto2 $
+
+SM API reference
+================
+
+This documentation describes the Vastsky storage manager API,
+which is used to implement Vastsky user commands like lvol_create.
+
+You can use this API to implement a functionality to operate on Vastsky
+for your own program.  Such programs would include:
+	- a hardware-monitor which informs the Vastsky storage manager
+	  of hardware failures
+	- a storage backend driver for VM/cloud management software
+
+The Vastsky storage manager API uses XML-RPC as a transport.  This
+documentation assumes that readers have enough knowledge of XML-RPC.
+If you are not familiar with it, see http://www.xmlrpc.com/spec.
+
+- Resource registration and deletion
+
+  - registerHeadServer     register a head server
+  - registerStorageServer  register a storage server
+  - registerPhysicalDisk   register a physical disk
+  - deletePhysicalDisk     delete a physical disk
+  - deleteHeadServer       delete a head server
+  - deleteStorageServer    delete a storage server
+
+- Logical volume operations, information retrieval
+
+  - createLogicalVolume  create a logical volume
+  - deleteLogicalVolume  delete a logical volume
+  - attachLogicalVolume  attach a logical volume
+  - detachLogicalVolume  detach a logical volume
+  - listLogicalVolumes   query the list of logical volumes
+  - showLogicalVolume    query the configuration of a logical volume
+
+- Query
+
+  - listHeadServers     query the list of head servers
+  - listStorageServers  query the list of storage servers
+  - listPhysicalDisks   query the list of physical disks
+  - listEvents          query the list of events
+
+- Resource status notification
+
+  - notifyFailure                notification of a resource failure
+  - notifyBadBlocks              notification of disk bad blocks
+  - notifyShredFinished          notification of zero-clear completion
+  - notifyRebuildMirrorFinished  notification of re-mirror completion
+
+- Others
+
+  - shutdownAll          shutdown the entire system
+
+request parameters
+------------
+
+Each XML RPC method for the vastsky storage manager takes exactly
+one parameter which is a struct for the method.
+The following is a list of members which are common to many of the structs.
+
+member name   type           description
+-------------------------------------------------------------
+ver           int            version number (1)
+ip_data       array<int>     IP address for data network.  The array has two
+                             elements.
+ssvrid        int            storage server ID
+local_path    string         local device pathname.
+iscsi_path    array<string>  iSCSI device pathname.  The array has two elements.
+capacity      int            capacity in GB
+pdskid        int            physical disk ID
+hsvrid        int            head server ID
+lvolname      string(64)     logical volume name
+redundancy    int            redundancy
+target        int            event target type
+targetid      int            event target id
+event         int            event type
+event_status  int            event status
+blocks        array<int>      an array of block numbers
+dexts         array<struct>  an array of disk extent status
+dextid        int            disk extent logical volume id
+mirrorid      int            mirror logical volume id
+-------------------------------------------------------------------------------------
+
+dexts struct
+----------------------------------------------
+dextid       int  disk extent logical volume id
+dext_status  int  disk extent status
+----------------------------------------------
+
+lvolstruct 
+-----------------------------------------------------------------------------------
+lvolid       int    logical volume id
+lvoltype     int    logical volume type
+capacity     int    capacity in GB
+bind_status  int    bind status
+lvolspec     struct  lvoltype-dependent information
+components   array<lvolstruct>  logical volumes of which this logical volume consists
+------------------------------------------------------------------------------------
+
+lvoltype is one of the following
+
+1: linear (a logical volume which is directly used by a user)
+2: mirror
+3: disk extent
+
+The following is a list of members of lvolspec for each lvoltype.
+
+1. Linear
+
+name      type    description
+--------------------------------------------
+lvolname  string(64) logical volume name
+hsvrid    int     head server to which this volume is currently attached.
+--------------------------------------------
+
+2. Mirror
+
+name      type    description
+--------------------------------------------
+add      lvolstruct  disk extent to remove
+remove   lvolstruct  disk extent to remove
+--------------------------------------------
+only used for the replaceMirrorDisk method, which is only for internal use.
+
+3. Disk Extent
+
+name    type description
+---------------------------------------------------------------------------------
+pdskid  int  physical disk to which this disk extent belongs
+offset  int  offset in GB in the physical disk
+ssvrid  int  storage server to which the physical disk is attached
+status  int  if this extent is a part of an mirror, status XXX
+iscsi_path  array<string>  iSCSI pathnames.  the array has two elements.
+---------------------------------------------------------------------------------
+
+
+Version Number
+--------------
+
+The version number is to check if the peer is using the same protocol version.
+There is no plan to provide backward compatibility.  Only the latest
+version will be supported.
+
+
+Return Values, Errors
+------------------
+
+In the following method descriptions, methods which doesn't have a
+meaningful return value are documented as "<response> nothing".
+However, they actually return int 0.
+
+Errors are returned by raising an xmlrpclib.Fault object.
+The first argument of the object is an error code.
+Many of error codes are chosen to match with the linux errno.
+Error code 500 means internal server error.
+
+
+registerHeadServer
+------------------
+
+<description>
+
+Register a head server.
+
+Look up the head server in the storage manager database by
+the given ip_data.  If there isn't a record of the head server,
+create one.  Otherwise, if the head server is OFFLINE, make it HIGH.
+Otherwise, return an error.
+
+This method is for VAS internal use.  It is only used by hsvr_reporter.
+
+<parameter>
+
+A struct with the following members.
+
+name     type        description
+-------------------------------------------------------------------------
+ver      int         version number(1)
+ip_data  array<int>  An array of IP addresses for the data network.
+                     This array has two elements.
+-------------------------------------------------------------------------
+
+<response>
+
+type description   
+-------------------
+int  head server id.
+-------------------
+
+<errors>
+
+ENOSPC: no usable IDs available
+EEXIST: the head server already exists and is not OFFLINE
+500: server internal error
+
+
+registerStorageServer
+---------------------
+
+<description>
+
+Register a storage server.
+
+Look up the storage server in the storage manager database by
+the given ip_data.  If there isn't a record of the storage server
+create one.  Otherwise, if the storage server is OFFLINE or HALT, make it HIGH.
+Otherwise, return an error.
+
+This method is for VAS internal use.  It is only used by ssvr_reporter.
+
+<parameter>
+
+A struct with the following members.
+
+name     type        description
+-------------------------------------------------------------------------
+ver      int         version number(1)
+ip_data  array<int>  An array of ip addresses for the data network.
+                     This array has two elements.
+-------------------------------------------------------------------------
+
+<response>
+
+type description   
+-----------------------
+int  storage server ID
+-----------------------
+
+<errors>
+
+ENOSPC: no usable IDs available
+EEXIST: the storage server already exists and is neither OFFLINE or HALT
+500: server internal error
+
+
+registerPhysicalDisk
+--------------------
+
+<description>
+
+Register a physical disk.
+
+Look up the physical disk in the storage manager database by
+the given local_path.  If there isn't a record of the physical disk,
+create one.  Otherwise, if the physical disk is OFFLINE or HALT, make it
+LOW if it has broken sectors, else HIGH. Otherwise, return an error.
+
+This method is for VAS internal use.  It is only used by ssvr_reporter.
+
+<parameter>
+
+A struct with the following members.
+
+name        type    description
+-------------------------------------------------------------------------
+ver         int     version number(1)
+ssvrid      int     storage server to which the physical disk is attached
+local_path  string  the pathname of the physical disk on the storage server
+capacity    string  the size of the physical disk in sectors
+                    (it is a string because int easily overflows)
+-------------------------------------------------------------------------
+
+<response>
+
+type description   
+-----------------------
+int  physical disk ID   
+-----------------------
+
+<errors>
+
+EINVAL: invalid ssvrid
+EBUSY:  the physical disk is already attached to one of other storage servers
+ENOSPC: no usable ID available
+EEXIST: the physical disk already exists and is neither OFFLINE or HALT
+500: server internal error
+
+
+deletePhysicalDisk
+------------------
+
+<description>
+
+Delete a physical disk.
+
+A physical disk can't be removed unless it's OFFLINE or FAULTY.
+
+<parameter>
+
+A struct with the following members.
+
+name        type description                   
+-------------------------------------------
+ver         int  version number(1)
+pdskid      int  physical disk ID
+-------------------------------------------
+
+<response>
+
+nothing
+
+<errors>
+
+ENOENT: the physical disk does not exist
+EBUSY:  the physical disk is neither OFFLINE or FAULTY
+500:    server internal error
+
+
+deleteHeadServer
+----------------
+
+<description>
+
+Delete a head server.
+
+A head server can't be removed unless it's OFFLINE or FAULTY.
+
+<parameter>
+
+A struct with the following members.
+
+name        type description                   
+-------------------------------------------
+ver         int  version number(1)
+hsvrid      int  head server ID
+-------------------------------------------
+
+<response>
+
+nothing.
+
+<errors>
+
+ENOENT: the head server doesn't exist
+EBUSY:  the head server is neither OFFLINE or FAULTY
+500:    server internal error 
+
+
+deleteStorageServer
+-------------------
+
+<description>
+
+Delete a storage server.
+
+A storage server can't be removed unless it's OFFLINE or FAULTY.
+Physical disks attached to the server will also be deleted.
+
+<parameter>
+
+a struct with the following members.
+
+name        type description                   
+-------------------------------------------
+ver         int  version number(1)
+ssvrid      int  storage server ID
+-------------------------------------------
+
+<response>
+
+nothing.
+
+<errors>
+
+ENOENT: the storage server doesn't exist
+EBUSY:  the storage server is neither OFFLINE or FAULTY
+500:    server internal error
+
+
+createLogicalVolume
+-------------------
+
+<description>
+
+Create a logical volume.
+Logical volume name should be unique in the system.
+
+<parameter>
+
+a struct with the following members.
+
+name        type     description                   
+-------------------------------------------
+ver         int      version number(1)
+lvolname    string(64) logical volume name
+capacity    int      capacity in GB
+redundancy  int      redundancy (optional, default 3)
+-------------------------------------------
+
+<response>
+
+type description   
+-------------------------
+int  logical volume ID   
+-------------------------
+
+<errors>
+
+EEXIST: there has already been a logical volume with lvolname in the system
+EINVAL: invalid parameter
+ENOSPC: not enough free space
+ENOSPC: no usable ID available
+500: server internal error
+
+
+deleteLogicalVolume
+-------------------
+
+<description>
+
+Delete a logical volume.
+A logical volume can't be deleted if it's attached to a head server.
+
+<parameter>
+
+A struct with the following members.
+
+name        type     description                   
+-------------------------------------------
+ver         int      version number(1)
+lvolid      int      logical volume ID
+lvolname    string(64) logical volume name
+-------------------------------------------
+One of lvolid and lvolname should be specified.
+If both are specified, lvolid is used and lvolname is ignored.
+
+<response>
+
+nothing.
+
+<errors>
+
+ENOENT: the specified volume does not exist
+EBUSY:  currently attached to a head server
+        (it may be in the process of being attached or detached)
+EINVAL: neither lvolname or lvolid is specified
+500:    server internal error
+
+
+attachLogicalVolume
+-------------------
+
+<description>
+
+attach a logical volume to a head server.
+
+<parameter>
+
+a struct with the following members.
+
+name        type     description                   
+-------------------------------------------
+ver         int      version number(1)
+lvolid      int      logical volume ID
+lvolname    string(64) logical volume name
+hsvrid      int      head server to attach
+-------------------------------------------
+Either lvolid or lvolname should be specified.
+If both are specified, lvolid is used and lvolname is ignored.
+
+<response>
+
+nothing
+
+<errors>
+
+ENOENT: the specified volume does not exist
+EINVAL: the head server does not exist
+EINVAL: neither lvolname or lvolid is specified
+EBUSY:  already attached
+        (it may be in the process of being attached or detached)
+500:    server internal error
+
+
+detachLogicalVolume
+-------------------
+
+<description>
+
+Detach a logical volume from a head server.
+
+<parameter>
+
+A struct with the following members.
+
+name        type     description                   
+-------------------------------------------
+ver         int      version number(1)
+lvolid      int      logical volume ID
+lvolname    string(64) logical volume name
+-------------------------------------------
+One of lvolid and lvolname should be specified.
+If both are specified, lvolid is used and lvolname is ignored.
+
+<response>
+
+nothing
+
+<errors>
+
+ENOENT: the specified volume does not exist
+EINVAL: neither lvolname or lvolid is specified
+500: server internal error
+
+
+listHeadServers
+---------------
+
+<description>
+
+Query the list of head servers.
+
+<parameter>
+
+A struct with the following members.
+
+name        type     description                   
+-------------------------------------------
+ver         int      version number(1)
+hsvrid      int      head server ID (optional)
+-------------------------------------------
+If hsvrid is specified, return the information for the specified head server.
+Otherwise, return the information for all head servers in the system.
+
+<response>
+
+type            description   
+------------------------------------------
+array <struct>  an array of head server information
+------------------------------------------
+
+The struct has the following members.
+
+name        type           description                  
+--------------------------------------------------
+hsvrid      int            head server ID
+priority    int            allocation priority
+ip_data     array<string>  An array of ip addresses for data network.
+                           This array has two elements.
+resync      int            the number of in-progress resync
+--------------------------------------------------
+    
+<errors>
+
+ENOENT: the head server does not exist
+500:    server internal error
+
+
+listStorageServers
+------------------
+
+<description>
+
+Query the list of storage servers.
+
+<parameter>
+
+a struct with the following members.
+
+name        type     description                   
+------------------------------------------------
+ver         int      version number(1)
+ssvrid      int      storage server ID (optional)
+------------------------------------------------
+If ssvrid is specified, return the information for the specified storage server.
+Otherwise, return the information for all storage servers in the system.
+
+<response>
+
+type           description   
+-------------------------------------
+array <struct>  an array of storage server information
+-------------------------------------
+
+The struct has following members.
+
+name        type           description                  
+--------------------------------------------------  
+ssvrid      int            storage server ID
+priority    int            allocation priority
+ip_data     array<string>  An array of ip addresses for data network.
+                           This array has two elements.
+resync      int            the number of in-progress resync
+available   int            free space in GB
+capacity    int            total capacity in GB
+--------------------------------------------------
+
+<errors>
+
+ENOENT: the storage server does not exist
+500:    server internal error
+
+
+listPhysicalDisks
+-----------------
+
+<description>
+
+Query the list of physical disks.
+
+<parameter>
+
+A struct with the following members.
+
+name        type     description                   
+------------------------------------------------
+ver         int      version number(1)
+ssvrid      int      storage server ID (optional)
+------------------------------------------------
+If ssvrid is specified, return the list of physical disks attached to the
+specified storage server.  Otherwise, return the list of all physical disks
+in the system.
+
+<response>
+
+type           description   
+---------------------------------
+array<struct>  an array of physical disk information (see below)
+---------------------------------
+
+The struct has the following members.
+
+name        type           description                  
+----------------------------------------------------
+ssvrid      int            storage server ID
+pdskid      int            physical disk ID
+priority    int            allocation priority
+iscsi_path  array<string>  iSCSI device pathnames
+local_path  string         local device path
+available   int            free space in GB
+capacity    int            total capacity in GB
+-----------------------------------------------------
+
+<errors>
+
+ENOENT: the specified storage server doesn't exist
+500:    server internal error
+
+
+listEvents
+----------
+
+<description>
+
+Query the list of events.
+
+<parameter>
+
+A struct with the following members.
+
+name        type     description                   
+--------------------------------------
+ver         int      version number(1)
+--------------------------------------
+
+<response>
+
+type            description   
+--------------------------------------
+array <struct>  an array of events
+--------------------------------------
+
+The struct has the following members.
+
+name          type description                  
+---------------------------------------
+eventid       int  event ID
+target        int  event target type
+targetid      int  event target ID
+event         int  event type
+event_status  int  event status
+---------------------------------------
+
+<errors>
+
+500: server internal error
+
+
+listLogicalVolumes
+------------------
+
+<description>
+
+Query the list of logical volumes.
+
+<parameter>
+
+A struct with the following members.
+
+name        type     description                   
+-----------------------------------------------
+ver         int      version number(1)
+lvolid      int      logical volume ID (optional)
+lvolname    string(64) logical volume name (optional)
+------------------------------------------------
+
+If neither lvolid nor lvolname is specified, return information for
+all logical volumes in the system.
+If either lvolid or lvolname is specified, return information for the
+corresponding logical volume.
+If both are specified, lvolid is used and lvolname is ignored.
+
+<response>
+
+type            description   
+------------------------------------
+array <struct>  logical volume information
+------------------------------------
+
+The struct has the following members.
+
+name        type description                  
+-------------------------------------------------------------------------------------- 
+hsvrid      int         ID of the head server to which this volume is currently
+                        attached.  if the volume is not attached, 0.
+lvolid      int         logical volume ID
+lvolname    string(64)  logical volume name
+redundancy  int         redundancy
+capacity    int         capacity in GB
+fault       boolean     if there's a broken components.
+bind_status int         bind status
+--------------------------------------------------------------------------------------
+
+bind_status may be one of following
+
+- BOUND(1)      attached to a head server.
+- ALLOCATED(2)  has not been attached yet since created.
+- UNBOUND(3)    not currently attached.
+- BINDING(4)    being attached to a head server.
+- UNBINDING(5)  being detached from a head server.
+
+<errors>
+
+ENOENT: the specified volume does not exist
+500:    server internal error
+
+
+showLogicalVolume
+-----------------
+
+<description>
+
+Retrieve the configuration of a logical volume.
+
+<parameter>
+
+a struct with the following members.
+
+name        type     description                   
+--------------------------------------
+ver         int      version number(1)
+lvolid      int      logical volume ID   (optional.  see below)
+lvolname    string(64) logical volume name (optional.  see below)
+--------------------------------------
+
+Either lvolid or lvolname should be specified.
+If both are specified, lvolid is used and lvolname is ignored.
+
+<response>
+
+type            description   
+------------------------------------
+lvolstruct      logical volume configuration
+------------------------------------
+
+<errors>
+
+ENOENT: the specified volume does not exist
+EINVAL: neither lvolname or lvolid is specified
+500:    server internal error
+
+
+notifyFailure
+-------------
+
+<description>
+
+Notification of a resource failure.
+
+<parameter>
+
+A struct with the following members.
+
+name        type     description                   
+----------------------------------
+ver         int  version number(1)
+target      int  resource type
+targetid    int  resource ID
+----------------------------------
+
+target is one of the following
+
+1: head server (targetid is a head server ID)
+2: storage server (targetid is a storage server ID)
+3: physical disk (targetid is a physical disk ID)
+4: disk extent (targetid is a disk extent ID)
+
+<response>
+
+nothing
+
+<errors>
+
+EINVAL: invalid target
+500:    server internal error
+
+
+notifyBadBlocks
+---------------
+
+<description>
+
+Notification of broken disk blocks.
+
+<parameter>
+
+A struct with the following members.
+
+name        type       description                   
+----------------------------------------
+ver         int        version number(1)
+pdskid      int        physical disk ID
+blocks      array<int> block numbers
+----------------------------------------
+Block numbers are of 1GB logical blocks.
+
+<response>
+
+nothing.
+
+<errors>
+
+EINVAL: invalid physical disk ID
+EINVAL: invalid block number
+ENOSPC: no usable ID available
+500:    server internal error
+
+
+notifyShredFinished
+-------------------
+
+<description>
+
+Notify a completion of a disk zero-clear.
+
+This method is for VAS internal use.
+
+<parameter>
+
+a struct with the following members.
+
+name        type     description                   
+---------------------------------------
+ver         int  version number(1)
+dextid      int  disk extent ID
+---------------------------------------
+
+<response>
+
+nothing
+
+<errors>
+
+ENOENT: the specified extent does not exist
+EINVAL: the specified extent has an unexpected status
+        (eg. the extent is BUSY.)
+500:    server internal error
+
+
+notifyRebuildMirrorFinished
+---------------------------
+
+<description>
+
+Notify a completion of re-mirror operation.
+
+This method is for VAS internal use.
+
+<parameter>
+
+A struct with the following members.
+
+name        type           description                   
+---------------------------------------------------------------------
+ver         int            version number(1)
+mirrorid    int            mirror ID
+dexts       array<struct>  Disk extent status.
+                           The number of elements is same as redundancy.
+---------------------------------------------------------------------
+
+The dexts struct has the following members.
+
+name         type description
+----------------------------------------------
+dextid       int  disk extent ID
+dext_status  int  disk extent status
+----------------------------------------------
+
+<response>
+
+nothing
+
+<errors>
+
+EINVAL: invalid mirror ID
+500:    server internal error
+
+
+shutdownAll
+-----------
+
+<description>
+
+Shutdown the entire VAS system.
+This can only be done if there are no volumes attached.
+
+<parameter>
+
+A struct with the following members.
+
+name        type     description
+----------------------------------
+ver         int  version number(1)
+----------------------------------
+
+<response>
+
+nothing
+
+<errors>
+
+EBUSY:  there are attached logical volumes
+500:    server internal error
+
+
