@@ -31,7 +31,7 @@
 # chkconfig: 2345 99 99
 # description:  Starts and stops storage manager
 
-. /etc/init.d/functions
+. /lib/lsb/init-functions
 
 STORAGE_MANAGER_BIN=/opt/vas/bin
 
@@ -61,10 +61,10 @@ case "$1" in
 	fi
 	;;
   stop)
-	killproc -p /var/run/check_servers.run
+	killproc -p /var/run/check_servers.run ${STORAGE_MANAGER_BIN}/daemon_launcher
 	RETVAL=$?
 	[ $RETVAL -eq 0 ] && rm -f /var/run/check_servers.run
-	killproc -p /var/run/vas_sm.run
+	killproc -p /var/run/vas_sm.run ${STORAGE_MANAGER_BIN}/daemon_launcher
 	RETVAL=$?
 	[ $RETVAL -eq 0 ] && rm -f /var/run/vas_sm.run
 	;;

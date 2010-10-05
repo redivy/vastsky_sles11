@@ -31,7 +31,7 @@
 # chkconfig: 2345 99 99
 # description:  Starts and stops head server
 
-. /etc/init.d/functions
+. /lib/lsb/init-functions
 
 STORAGE_MANAGER_BIN=/opt/vas/bin
 RETVAL=0
@@ -48,12 +48,12 @@ case "$1" in
 	;;
   stop)
 	if [ -f /var/run/hsvr_reporter.run ] ; then
-		killproc -p /var/run/hsvr_reporter.run
+		killproc -p /var/run/hsvr_reporter.run ${STORAGE_MANAGER_BIN}/hsvr_reporter
 	fi
-	killproc -p /var/run/hsvr_agent.run
+	killproc -p /var/run/hsvr_agent.run ${STORAGE_MANAGER_BIN}/daemon_launcher
 	RETVAL=$?
 	[ $RETVAL -eq 0 ] && rm -f /var/run/hsvr_agent.run
-	killproc -p /var/run/lvol_error.run
+	killproc -p /var/run/lvol_error.run ${STORAGE_MANAGER_BIN}/daemon_launcher
 	RETVAL=$?
 	[ $RETVAL -eq 0 ] && rm -f /var/run/lvol_error.run
 	;;
