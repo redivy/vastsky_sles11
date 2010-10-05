@@ -31,7 +31,7 @@
 __version__ = '$Id: vas_db.py 95 2010-07-16 01:14:35Z yamamoto2 $'
 
 import sys
-import sqlite
+import sqlite3 as sqlite
 import traceback
 from vas_conf import DB_COMPONENTS, DB_EVENTS, EXTENTSIZE, \
 logger, MAX_EVENTID, MAX_LENGTH, MAX_REDUNDANCY, MIN_REDUNDANCY
@@ -69,7 +69,7 @@ class Db_base:
             conn_holder = DB_CONNECTIONS[path]
             conn_holder['refcount'] += 1
         else:
-            conn_holder = {'conn': sqlite.connect(path),'refcount': 1}
+            conn_holder = {'conn': sqlite.connect(path, check_same_thread = False),'refcount': 1}
             DB_CONNECTIONS[path] = conn_holder
         self.conn = conn_holder['conn']
         self.c = self.conn.cursor()
