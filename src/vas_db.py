@@ -148,7 +148,7 @@ class Db_common(Db_base):
             if type == 'int':
                 insert_str2 += "%s%%d" % (comma)
             else:
-                insert_str2 += "%s%%s" % (comma)
+                insert_str2 += "%s'%%s'" % (comma)
             if key == table_def['primary_key']:
                 type += " primary key"
             create_str += "%s%s %s" % (comma, key, type)
@@ -169,7 +169,7 @@ class Db_common(Db_base):
             self.rollback()
 
     def put_row(self, args):
-        self.c.execute(self.sql_insert_str, args)
+        self.c.execute(self.sql_insert_str % args)
 
     def delete_rows(self, key, value):
         self.c.execute("delete from %s where %s = %r" % (self.db_name, key, value))
@@ -205,7 +205,7 @@ class Db_common(Db_base):
         self.c.execute("select * from %s where ip_data_1 in (%r, %r) or ip_data_2 in (%r, %r)" % (self.db_name, ip_data[0], ip_data[1], ip_data[0], ip_data[1]))
         if self.c.rowcount > 1:
             raise Exception, "IP address confliction"
-        if self.c.rowcount == 0:
+        if self.c.rowcount <= 0:
             return None
         row = dict(zip(self.db_keys, self.c.fetchone()))
         if row['ip_data_1'] == ip_data[0] and row['ip_data_2'] == ip_data[1]:
