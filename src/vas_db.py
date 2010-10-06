@@ -93,7 +93,8 @@ class Db_base:
         pass
 
     def begin_transaction(self):
-        assert(self.conn.inTransaction == 0), lineno()
+        #assert(self.conn.inTransaction == 0), lineno()
+        True
 
     def commit(self):
         self.conn.commit()
