@@ -412,7 +412,7 @@ def getMultiPathDevice(dev_disk_by_path):
     # iSCSI device path --> wwid
     wwid = ''
 
-    command = "scsi_id -g -u -s /block/%s" % os.path.realpath(dev_disk_by_path).split('/dev/')[1]
+    command = "scsi_id -g -u /dev/%s" % os.path.realpath(dev_disk_by_path).split('/dev/')[1]
     condition = "os.path.exists('"'%s'"')" % dev_disk_by_path
     wwid = executecommand_retry(command, condition, SCSI_ID_RETRY_TIMES)
 
