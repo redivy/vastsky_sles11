@@ -149,7 +149,7 @@ class Db_common(Db_base):
             if type == 'int':
                 insert_str2 += "%s%%d" % (comma)
             else:
-                insert_str2 += "%s'%%s'" % (comma)
+                insert_str2 += "%s%%r" % (comma)
             if key == table_def['primary_key']:
                 type += " primary key"
             create_str += "%s%s %s" % (comma, key, type)
@@ -200,15 +200,16 @@ class Db_common(Db_base):
     def rowcount(self):
         sql = "select * from %s" % (self.db_name)
         self.c.execute(sql)
-        return(self.c.rowcount)
+        return( len( self.c.fetchall() ) )
 
     def get_svr_by_ip_data(self, ip_data):
         self.c.execute("select * from %s where ip_data_1 in (%r, %r) or ip_data_2 in (%r, %r)" % (self.db_name, ip_data[0], ip_data[1], ip_data[0], ip_data[1]))
-        if self.c.rowcount > 1:
+        result = self.c.fetchall()
+        if len(result) > 1:
             raise Exception, "IP address confliction"
-        if self.c.rowcount <= 0:
+        if len(result) == 0:
             return None
-        row = dict(zip(self.db_keys, self.c.fetchone()))
+        row = dict(zip(self.db_keys, result[0]))
         if row['ip_data_1'] == ip_data[0] and row['ip_data_2'] == ip_data[1]:
             return row
         else:
@@ -287,7 +288,7 @@ class Db_lvolmap(Db_common):
         assert(lvolmap_row['lvoltype'] == LVOLTYPE['DEXT']), lineno()
         sql = "select * from %s where superlvolid = %d and mirror = %d" % (self.db_name, lvolmap_row['superlvolid'], MIRROR_STATUS['VALID'])
         self.c.execute(sql)
-        return(self.c.rowcount)
+        return( len( self.c.fetchall() ) )
 
 class Db_transit(Db_common):
     def __init__(self):
@@ -306,7 +307,7 @@ class Db_transit(Db_common):
     def count_progress_resyncs(self):
         sql = "select * from %s where event = %d and status = %d" % (self.db_name, EVENT['RESYNC'], EVENT_STATUS['PROGRESS'])
         self.c.execute(sql)
-        return(self.c.rowcount)
+        return( len( self.c.fetchall() ) )
 
     def get_shreds(self, status):
         retval = []
@@ -321,7 +322,7 @@ class Db_transit(Db_common):
     def count_progress_shreds(self):
         sql = "select * from %s where event = %d and status = %d" % (self.db_name, EVENT['SHRED'], EVENT_STATUS['PROGRESS'])
         self.c.execute(sql)
-        return(self.c.rowcount)
+        return( len( self.c.fetchall() ) )
 
 class Db_resync(Db_common):
     def __init__(self):
@@ -698,10 +699,11 @@ where
             self.c.execute(sql)
             allocated = {}
 
-            if self.c.rowcount < 1:
+            result = self.c.fetchall()
+            if len(result) < 1:
                 # ENOSPC
                 raise Exception, "replace_disk: can not choose an alternative disk on some other storage servers"
-            pdskid, ssvrid, path, path_2, = self.c.fetchone()
+            pdskid, ssvrid, path, path_2, = result[0]
             # select the largest free extent
             sql = """
 select 
@@ -722,10 +724,11 @@ order by
     dskmap.capacity desc
             """ % (EXT_STATUS['FREE'], pdskid)
             self.c.execute(sql)
-            if self.c.rowcount < 1:
+            result = self.c.fetchall()
+            if len(result) < 1:
                 # ENOSPC
                 raise Exception, "replace_disk: can not allocate a disk extent on some other storage servers"
-            pdskid, lvid, offset, l, path, path_2 = self.c.fetchone()
+            pdskid, lvid, offset, l, path, path_2 = result[0]
             add = {'lvolid': lvid, 'capacity': capacity, 'offset': offset, 'ssvrid': ssvrid, 'iscsi_path': (path, path_2)}
             if l > capacity:
                 allocated[ssvrid] = True
