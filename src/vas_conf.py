@@ -46,7 +46,7 @@ STORAGE_MANAGER_CONF = '/etc'
 VAS_DEVICE_DIR = '/dev/vas'
 VAS_PDSK_DIR = STORAGE_MANAGER_VAR + '/pdsk'
 DM_DEVICE_DIR = '/dev/mapper'
-MD_DEVICE_DIR = '/dev/mirror'
+MD_DEVICE_DIR = '/dev/md'
 
 #
 # common parameters
