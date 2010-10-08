@@ -149,7 +149,7 @@ class Db_common(Db_base):
             if type == 'int':
                 insert_str2 += "%s%%d" % (comma)
             else:
-                insert_str2 += "%s%%r" % (comma)
+                insert_str2 += "%s'%%s'" % (comma)
             if key == table_def['primary_key']:
                 type += " primary key"
             create_str += "%s%s %s" % (comma, key, type)
