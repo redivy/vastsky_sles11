@@ -460,7 +460,7 @@ def getDextDevName(ssvrid, dextid):
     return "%08x-%08x" % (ssvrid, dextid)
 
 def getMirrorDevName(lvolid):
-    return "%08x" % (lvolid)
+    return "%d" % (lvolid)
 
 def getLinearDevName(lvolid):
     return "lvol-%08x" % (lvolid)
@@ -478,7 +478,7 @@ def getDextDevPath(ssvrid, dextid):
     return getDmDevPath(getDextDevName(ssvrid, dextid))
 
 def getMirrorDevPath(lvolid):
-    return "%s/%s" % (MD_DEVICE_DIR, getMirrorDevName(lvolid))
+    return "%s%s" % (MD_DEVICE_DIR, getMirrorDevName(lvolid))
 
 def getLinearDevPath(lvolid):
     return getDmDevPath(getLinearDevName(lvolid))
