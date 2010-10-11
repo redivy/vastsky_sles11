@@ -119,8 +119,8 @@ BLOCKDEV_RETRY_TIMES = 10
 ISCSIADM_RETRY_TIMES = 10
 
 # for mdadm
-MDADM_CREATE_OPTIONS = "--auto=md --bitmap=internal --metadata=0 --run --bitmap-chunk=65536 --delay=5 --level=1"
-MDADM_ASSEMBLE_OPTIONS = "--run --auto=md --metadata=0"
+MDADM_CREATE_OPTIONS = "--auto=md --bitmap=internal --metadata=1.1 --run --bitmap-chunk=65536 --delay=5 --level=1"
+MDADM_ASSEMBLE_OPTIONS = "--run --auto=md --metadata=1.1"
 
 # for hsvr_agent
 MDADM_EVENT_CMD = STORAGE_MANAGER_BIN + '/mdadm_event'
