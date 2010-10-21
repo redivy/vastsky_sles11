@@ -87,7 +87,7 @@ MAX_REDUNDANCY = 9
 MAX_LENGTH = 1024 * 1024 
 
 # supported extent sizes in GB
-EXTENTSIZE = [10]
+EXTENTSIZE = [1]
 
 # maximum eventid number
 MAX_EVENTID = 1024 * 1024
