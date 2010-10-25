@@ -63,6 +63,16 @@ class HsvrAgent:
     def _dispatch(self, method, params):
         return dispatch_and_log(self, method, params)
 
+    def __connect(self, lvolstruct_mirrors):
+        if SCSI_DRIVER == 'srp':
+            return 0
+        __loginIscsiTarget(self, lvolstruct_mirrors)
+
+    def __disconnect(self, lvolstruct_mirrors):
+        if SCSI_DRIVER == 'srp':
+            return 0
+        __logoutIscsiTarget(self, lvolstruct_mirrors)
+
     def __loginIscsiTarget(self, lvolstruct_mirrors):
         try:
             paths = []
@@ -248,7 +258,7 @@ class HsvrAgent:
         try:
             main_lock.acquire()
             # setup iSCSI devices
-            self.__loginIscsiTarget(lvolstruct_mirrors)
+            self.__connect(lvolstruct_mirrors)
 
             # setup mirror devices
             for mirror in lvolstruct_mirrors:
@@ -320,7 +330,7 @@ class HsvrAgent:
         try:
             main_lock.acquire()
             # setup iSCSI devices
-            self.__loginIscsiTarget(mirrors)
+            self.__connect(mirrors)
 
             # setup mirror devices
             for mirror in mirrors:
@@ -381,7 +391,7 @@ class HsvrAgent:
         try:
             main_lock.acquire()
             # setup iSCSI devices
-            self.__loginIscsiTarget([lvolstruct])
+            self.__connect([lvolstruct])
 
             mirrordev = getMirrorDevPath(lvolstruct['lvolid'])
             add = lvolstruct['lvolspec']['add']
@@ -464,7 +474,7 @@ class HsvrAgent:
             self.__dmsetup_remove(getLinearDevName(lvolid_linear))
 
         self.__cleanup_mirror_devices(lvolstruct_mirrors)
-        self.__logoutIscsiTarget(lvolstruct_mirrors)
+        self.__disconnect(lvolstruct_mirrors)
         self.__kill_mdadm_monitor_daemon(lvolid_linear)
             
     def replaceMirrorDisk(self, data):
@@ -474,12 +484,12 @@ class HsvrAgent:
             self.__mdadm_fail_add_remove(lvolstruct)
         except Exception:
             logger.error(traceback.format_exc())
-            self.__logoutIscsiTarget([lvolstruct])
+            self.__disconnect([lvolstruct])
             raise xmlrpclib.Fault(500, 'Internal Server Error')
 
         try:
             # cleanup unused iSCSI devices
-            self.__logoutIscsiTarget([lvolstruct])
+            self.__disconnect([lvolstruct])
         except Exception:
             logger.error(traceback.format_exc())
             # fail through
