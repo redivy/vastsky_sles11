@@ -139,11 +139,13 @@ def register_resources(refresh):
         for file in pdsk_paths:
             try:
                 sectors = getDiskSize(file)
+                srp_name = executecommand("cat /proc/scsi_tgt/vdisk/vdisk | grep '%s' | awk '{print $1}'" % ( os.path.realpath(file)) )
 
                 subargs = { \
                 'ver': XMLRPC_VERSION, \
                 'ssvrid': ssvrid, \
                 'capacity': str(sectors), \
+                'srp_name': srp_name, \
                 'local_path': file, \
                 }
                 send_request(host_storage_manager_list, port_storage_manager, "registerPhysicalDisk", subargs)
@@ -161,11 +163,13 @@ def register_resources(refresh):
         for file in new_pdsk_paths:
             try:
                 sectors = getDiskSize(file)
+                srp_name = executecommand("cat /proc/scsi_tgt/vdisk/vdisk | grep '%s' | awk '{print $1}'" % ( os.path.realpath(file)) )
 
                 subargs = { \
                 'ver': XMLRPC_VERSION, \
                 'ssvrid': ssvrid, \
                 'capacity': str(sectors), \
+                'srp_name': srp_name, \
                 'local_path': file, \
                 }
                 pdskid = send_request(host_storage_manager_list, port_storage_manager, "registerPhysicalDisk", subargs)

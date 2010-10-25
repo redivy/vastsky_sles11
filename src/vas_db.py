@@ -110,7 +110,7 @@ HSVRLST_DEF = {'name': 'hsvrlst', 'fields': [('hsvrid', 'int'), ('priority', 'in
     'primary_key': 'hsvrid'}
 PDSKLST_DEF = {'name': 'pdsklst', 'fields': [('ssvrid', 'int'), ('pdskid', 'int'), \
     ('capacity', 'int'), ('iscsi_path_1', 'varchar(1024)'), ('iscsi_path_2', 'varchar(1024)'), \
-    ('local_path', 'varchar(1024)'), ('priority', 'int'), ('resync', 'int')], \
+    ('srp_name', 'varchar(1024)'), ('local_path', 'varchar(1024)'), ('priority', 'int'), ('resync', 'int')], \
     'primary_key': 'pdskid'}
 LVOLLST_DEF = {'name': 'lvollst', 'fields': [('hsvrid', 'int'), ('lvolid', 'int'), \
     ('lvolname', 'varchar(64)'), ('redundancy', 'int'), ('capacity', 'int')], \

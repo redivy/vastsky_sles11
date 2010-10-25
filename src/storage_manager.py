@@ -759,8 +759,9 @@ class StorageManager:
                 else:
                     available = 0
                 entry = {'ssvrid': pdsk['ssvrid'], 'pdskid': pdsk['pdskid'], 'priority': pdsk['priority'], \
-                'iscsi_path': (pdsk['iscsi_path_1'], pdsk['iscsi_path_2']), 'local_path': pdsk['local_path'], \
-                'resync': pdsk['resync'], 'capacity': pdsk['capacity'], 'available': available}
+                'iscsi_path': (pdsk['iscsi_path_1'], pdsk['iscsi_path_2']), 'srp_name': pdsk['srp_name'], \
+                'local_path': pdsk['local_path'], 'resync': pdsk['resync'], 'capacity': pdsk['capacity'],  \
+                'available': available}
                 array.append(entry)
 
         except xmlrpclib.Fault:
@@ -1527,7 +1528,7 @@ class StorageManager:
                     super_sectors = vbtos(1)
 
                 self.pdsklst.put_row((data['ssvrid'], pdskid, size_in_giga, ISCSI_PATH % (ssvr['ip_data_1'], iqn_prefix_iscsi,  pdskid), \
-                   ISCSI_PATH % (ssvr['ip_data_2'], iqn_prefix_iscsi,  pdskid), data['local_path'], vas_db.ALLOC_PRIORITY['HIGH'], 0))
+                   ISCSI_PATH % (ssvr['ip_data_2'], iqn_prefix_iscsi,  pdskid), data['srp_name'], data['local_path'], vas_db.ALLOC_PRIORITY['HIGH'], 0))
                 self.dskmap.put_row((pdskid, lvolid, 0, size_in_giga, vas_db.EXT_STATUS['OFFLINE']))
                 self.dskmap.put_row((pdskid, superid, size_in_giga, super_sectors, vas_db.EXT_STATUS['SUPER']))
 

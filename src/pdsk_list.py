@@ -83,8 +83,8 @@ def listPhysicalDisks_print(array):
     else:
         print column % ('total %d GB' % capacity_total, 'available %d GB' % available_total, 'use% 0%')
 
-    column = "%-14s %-14s %-9s%6s %10s %10s %5s %-18s"
-    header = column % ('pdskid', 'ssvrid', 'priority', 'resync', 'capacity', 'available', 'use%', 'local_path')
+    column = "%-14s %-14s %-9s%6s %10s %10s %5s %-40s %-18s"
+    header = column % ('pdskid', 'ssvrid', 'priority', 'resync', 'capacity', 'available', 'use%', 'local_path', 'srp_name')
     print header
     for entry in array:
         if entry['capacity']:
@@ -92,7 +92,7 @@ def listPhysicalDisks_print(array):
         else:
             use = 0
         print column % ('pdsk-%08x' % entry['pdskid'], 'ssvr-%08x' % entry['ssvrid'], ALLOC_PRIORITY_STR[entry['priority']], \
-        '%d' % entry['resync'], '%3d GB' % entry['capacity'], '%d GB' % entry['available'], '%d%%' % use, entry['local_path'])
+        '%d' % entry['resync'], '%3d GB' % entry['capacity'], '%d GB' % entry['available'], '%d%%' % use, entry['local_path'], entry['srp_name'])
 
 def main():
     socket.setdefaulttimeout(SOCKET_DEFAULT_TIMEOUT)
