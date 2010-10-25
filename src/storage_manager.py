@@ -1526,9 +1526,14 @@ class StorageManager:
                 if super_sectors == 0:
                     size_in_giga -= 1
                     super_sectors = vbtos(1)
+                if SCSI_DRIVER == 'iet':
+                    iscsi_path_1 = ISCSI_PATH % (ssvr['ip_data_1'], iqn_prefix_iscsi,  pdskid)
+                    iscsi_path_2 = ISCSI_PATH % (ssvr['ip_data_2'], iqn_prefix_iscsi,  pdskid)
+                elif SCSI_DRIVER == 'srp':
+                    iscsi_path_1 = iscsi_path_2 = SRP_PATH % ( data['srp_name'] )
 
-                self.pdsklst.put_row((data['ssvrid'], pdskid, size_in_giga, ISCSI_PATH % (ssvr['ip_data_1'], iqn_prefix_iscsi,  pdskid), \
-                   ISCSI_PATH % (ssvr['ip_data_2'], iqn_prefix_iscsi,  pdskid), data['srp_name'], data['local_path'], vas_db.ALLOC_PRIORITY['HIGH'], 0))
+                self.pdsklst.put_row((data['ssvrid'], pdskid, size_in_giga, iscsi_path_1, \
+                   iscsi_path_2, data['srp_name'], data['local_path'], vas_db.ALLOC_PRIORITY['HIGH'], 0))
                 self.dskmap.put_row((pdskid, lvolid, 0, size_in_giga, vas_db.EXT_STATUS['OFFLINE']))
                 self.dskmap.put_row((pdskid, superid, size_in_giga, super_sectors, vas_db.EXT_STATUS['SUPER']))
 

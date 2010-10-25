@@ -99,6 +99,7 @@ class HsvrAgent:
 
                 command = "iscsiadm -m node -T iqn.%s:%s --login" % (iqn_prefix_iscsi, pdskid_str)
                 condition = "not (os.path.exists('"'%s'"') and os.path.exists('"'%s'"'))" % (path, path_2)
+                logger.info("os.path1('"'%s'"') and os.path2('"'%s'"'))" % (path, path_2))
                 executecommand_retry(command, condition, ISCSIADM_RETRY_TIMES)
 
                 paths_for_errout.append(path)

@@ -96,6 +96,13 @@ MAX_EVENTID = 1024 * 1024
 # for head server and storage server nodes.
 #
 
+# Storage connectivity driver
+# 'srp', 'iet'
+SCSI_DRIVER = 'srp'
+
+# for srp connectivity
+SRP_PATH = '/dev/disk/by-path/srp-%s'
+
 # for IET target configuration
 ISCSI_PATH = '/dev/disk/by-path/ip-%s:3260-iscsi-iqn.%s:%08x-lun-1'
 MIN_TID = 1

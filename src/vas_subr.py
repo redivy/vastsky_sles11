@@ -248,31 +248,12 @@ def activatePhysicalDisk(data):
     pdskid = data['pdskid']
     iqn = data['iqn']
 
-    try:
-        tid = get_tid(pdskid)
-        # already registered.
-        logger.info("activatePhysicalDisk: %s:%08x is already activated. tid = %d" % (iqn, pdskid, tid))
-        return
-    except:
-        pass
-        # fail through
+    if SCSI_DRIVER == 'srp':
+        activatePhysicalDiskSRP(disk_dev, pdskid)
+    elif SCSI_DRIVER == 'iet':
+        activatePhysicalDiskIET(disk_dev, iqn, pdskid)
+    save_data_file()
 
-    tid = gen_tid()
-    try:
-	path = createPdskLink(disk_dev, pdskid)
-        # setup iSCSI target
-        addNewTargetIET(tid, iqn, pdskid)
-        # setup iSCSI LUN and save data file
-        addNewLogicalUnitIET(pdskid, tid, path)
-        save_data_file()
-    except:
-        cleanupPhysicalDisk(pdskid, tid)
-        raise
-
-def cleanupPhysicalDisk(pdskid, tid):
-    if scan_tid(tid):
-        delNewTargetIET(tid)
-    removePdskLink(pdskid)
 
 def scan_tid(tid):
     tid_re = re.compile("^tid:\d+$")
@@ -363,9 +344,11 @@ def getDeviceList(path):
     pdskid_list = []
 
     if path not in (REGISTER_DEVICE_LIST, DEVICE_LIST_FILE):
+        logger.error("device path %r is not in %r, %r" % (path, REGISTER_DEVICE_LIST, DEVICE_LIST_FILE))
         raise getDeviceListBadFileException
 
     if not os.path.exists(path):
+        logger.error("device path %r does not exist" % (path))
         raise getDeviceListBadFileException
     
     f =  open(path, 'r')
@@ -432,11 +415,7 @@ def cleanupMultiPathDevice(path):
     dev_name = getMultiPathDevice(path).split(DM_DEVICE_DIR + '/')[1]
     # NOTE: the multipath command returns 1. (bug?)
     commands.getstatusoutput("/sbin/multipath -f %s" % dev_name)
-
-    command = "iscsiadm -m node -T iqn.%s:%s --logout" % (iqn_prefix_iscsi, pdskid_str)
-    execute_retry_path_exist(command, path, ISCSIADM_RETRY_TIMES )
-
-    executecommand("iscsiadm -m node -o delete -T iqn.%s:%s" % (iqn_prefix_iscsi, pdskid_str) )
+    iscsiLogout(path, pdskid_str, iqn_prefix_iscsi)
 
 def setupDextDevice(lvolstruct_extent):
     devname = getDextDevName(lvolstruct_extent['lvolspec']['ssvrid'],lvolstruct_extent['lvolid'])
@@ -502,3 +481,48 @@ def check_lvolname(lvolname):
     lvol_re = re.compile("^lvol-[0-f]+$")
     if lvol_re.match(lvolname):
         raise Exception, "invalid lvolname(%s)." % lvolname
+
+# IET and iscsi-initiator functions
+#
+
+def activatePhysicalDiskIET(disk_dev, iqn, pdskid):
+    try:
+        tid = get_tid(pdskid)
+        # already registered.
+        logger.info("activatePhysicalDiskIET: %s:%08x is already activated. tid = %d" % (iqn, pdskid, tid))
+        return
+    except:
+        pass
+        # fail through
+
+    tid = gen_tid()
+    try:
+	path = createPdskLink(disk_dev, pdskid)
+        # setup iSCSI target
+        addNewTargetIET(tid, iqn, pdskid)
+        # setup iSCSI LUN and save data file
+        addNewLogicalUnitIET(pdskid, tid, path)
+    except:
+        cleanupPhysicalDiskIET(pdskid, tid)
+        raise
+
+def cleanupPhysicalDiskIET(pdskid, tid):
+    if scan_tid(tid):
+        delNewTargetIET(tid)
+    removePdskLink(pdskid)
+
+def iscsiLogout(path, pdskid_str, iqn_prefix_iscsi):
+    command = "iscsiadm -m node -T iqn.%s:%s --logout" % (iqn_prefix_iscsi, pdskid_str)
+    execute_retry_path_exist(command, path, ISCSIADM_RETRY_TIMES )
+
+    executecommand("iscsiadm -m node -o delete -T iqn.%s:%s" % (iqn_prefix_iscsi, pdskid_str) )
+
+
+def activatePhysicalDiskSRP(disk_dev, pdskid):
+    logger.info('activatePhysicalDiskSRP: creating symlink')
+    try:
+	path = createPdskLink(disk_dev, pdskid)
+    except:
+        removePdskLink(pdskid)
+        raise
+
