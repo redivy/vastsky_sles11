@@ -1,6 +1,6 @@
 %define vas_inst_root /opt/vas
-%define vas_version 2.1
-%define vas_release 3
+%define vas_version 3.0
+%define vas_release 1
 
 Summary: Vastsky
 Name: vastsky
@@ -29,14 +29,27 @@ volumes (linux block devices) to users by aggregating disks over a network.
 %install
 rm -rf ${RPM_BUILD_ROOT}
 mkdir -p ${RPM_BUILD_ROOT}%{vas_inst_root}
+mkdir -p ${RPM_BUILD_ROOT}%{vas_inst_root}/examples
 mkdir -p ${RPM_BUILD_ROOT}%{_sysconfdir}
 mkdir -p ${RPM_BUILD_ROOT}%{_sysconfdir}/init.d
 mkdir -p ${RPM_BUILD_ROOT}%{_bindir}
 mkdir -p ${RPM_BUILD_ROOT}%{_sbindir}
 sh -c "cd src && ./test_install.py --root=${RPM_BUILD_ROOT}"
-cp examples/vas.conf ${RPM_BUILD_ROOT}%{_sysconfdir}
 mkdir -p "${RPM_BUILD_ROOT}/usr/share/doc/vastsky/"
-cp doc/vas_*.txt "${RPM_BUILD_ROOT}/usr/share/doc/vastsky/"
+cp \
+	doc/vas_admin.txt \
+	doc/vas_api.txt \
+	doc/vas_cli.txt \
+	doc/vas_examples.txt \
+	doc/vas_install.txt \
+	doc/vas_overview.txt \
+	doc/vas_roadmap.txt \
+	"${RPM_BUILD_ROOT}/usr/share/doc/vastsky/"
+mkdir -p "${RPM_BUILD_ROOT}/usr/share/doc/vastsky/examples/"
+cp \
+	doc/examples/vas.conf \
+	doc/examples/register_device_list \
+	"${RPM_BUILD_ROOT}/usr/share/doc/vastsky/examples/"
 
 %clean
 rm -rf ${RPM_BUILD_ROOT}
@@ -61,12 +74,19 @@ packages.
 %dir %{vas_inst_root}/bin
 %dir %{_localstatedir}/lib/vas
 %dir %{_localstatedir}/lib/vas/db
-%{vas_inst_root}/lib/daemon_launcher.pyc
-%{vas_inst_root}/lib/vas_conf.pyc
-%{vas_inst_root}/lib/vas_db.pyc
-%{vas_inst_root}/lib/vas_subr.pyc
 %{vas_inst_root}/bin/daemon_launcher
-%config(noreplace) %{_sysconfdir}/vas.conf
+%{vas_inst_root}/lib/daemon_launcher.pyc
+%{vas_inst_root}/lib/dag.pyc
+%{vas_inst_root}/lib/event.pyc
+%{vas_inst_root}/lib/hashedlock.pyc
+%{vas_inst_root}/lib/lv_dbnode.pyc
+%{vas_inst_root}/lib/refcountedhash.pyc
+%{vas_inst_root}/lib/vas_conf.pyc
+%{vas_inst_root}/lib/vas_const.pyc
+%{vas_inst_root}/lib/vas_db.pyc
+%{vas_inst_root}/lib/vas_iscsi.pyc
+%{vas_inst_root}/lib/vas_subr.pyc
+%{vas_inst_root}/lib/worker.pyc
 
 %package doc
 Summary: Vastsky documentation
@@ -81,11 +101,13 @@ vastsky-doc package includes documentations for vastsky.
 %dir /usr/share/doc/vastsky
 /usr/share/doc/vastsky/vas_admin.txt
 /usr/share/doc/vastsky/vas_api.txt
-/usr/share/doc/vastsky/vas_examples.txt
 /usr/share/doc/vastsky/vas_cli.txt
+/usr/share/doc/vastsky/vas_examples.txt
 /usr/share/doc/vastsky/vas_install.txt
 /usr/share/doc/vastsky/vas_overview.txt
 /usr/share/doc/vastsky/vas_roadmap.txt
+/usr/share/doc/vastsky/examples/vas.conf
+/usr/share/doc/vastsky/examples/register_device_list
 
 %package sm
 Summary: Vastsky storage manager
@@ -109,13 +131,13 @@ fi
 %defattr(-,root,root)
 %dir %{_localstatedir}/lib/vas/db
 %{_sysconfdir}/init.d/vas_sm
-%{vas_inst_root}/bin/storage_manager
-%{vas_inst_root}/bin/shutdownAll
 %{vas_inst_root}/bin/check_servers
-%{vas_inst_root}/lib/storage_manager.pyc
-%{vas_inst_root}/lib/shutdownAll.pyc
-%{vas_inst_root}/lib/check_servers.pyc
+%{vas_inst_root}/bin/shutdownAll
+%{vas_inst_root}/bin/storage_manager
 %{vas_inst_root}/bin/vas_db
+%{vas_inst_root}/lib/check_servers.pyc
+%{vas_inst_root}/lib/shutdownAll.pyc
+%{vas_inst_root}/lib/storage_manager.pyc
 
 %package hsvr
 Summary: Vastsky head server
@@ -138,15 +160,22 @@ fi
 %files hsvr
 %defattr(-,root,root)
 %{_sysconfdir}/init.d/vas_hsvr
-%{vas_inst_root}/lib/hsvr_reporter.pyc
-%{vas_inst_root}/lib/hsvr_agent.pyc
-%{vas_inst_root}/lib/lvol_error.pyc
-%{vas_inst_root}/lib/mdstat.pyc
-%{vas_inst_root}/lib/mdadm_event.pyc
-%{vas_inst_root}/bin/hsvr_reporter
 %{vas_inst_root}/bin/hsvr_agent
+%{vas_inst_root}/bin/hsvr_reporter
 %{vas_inst_root}/bin/lvol_error
-%{vas_inst_root}/bin/mdadm_event
+%{vas_inst_root}/lib/hsvr_agent.pyc
+%{vas_inst_root}/lib/hsvr_dag.pyc
+%{vas_inst_root}/lib/hsvr_reporter.pyc
+%{vas_inst_root}/lib/lvnode.pyc
+%{vas_inst_root}/lib/lvnode_0.pyc
+%{vas_inst_root}/lib/lvnode_1.pyc
+%{vas_inst_root}/lib/lvnode_2.pyc
+%{vas_inst_root}/lib/lvnode_3.pyc
+%{vas_inst_root}/lib/lvnode_6.pyc
+%{vas_inst_root}/lib/lvnode_7.pyc
+%{vas_inst_root}/lib/lvol_error.pyc
+%{vas_inst_root}/lib/mynode.pyc
+%{vas_inst_root}/lib/symlinknode.pyc
 
 %package ssvr
 Summary: Vastsky storage server
@@ -169,12 +198,12 @@ fi
 %files ssvr
 %defattr(-,root,root)
 %{_sysconfdir}/init.d/vas_ssvr
-%{vas_inst_root}/lib/ssvr_reporter.pyc
-%{vas_inst_root}/lib/ssvr_agent.pyc
-%{vas_inst_root}/lib/DiskPatroller.pyc
-%{vas_inst_root}/bin/ssvr_reporter
-%{vas_inst_root}/bin/ssvr_agent
 %{vas_inst_root}/bin/DiskPatroller
+%{vas_inst_root}/bin/ssvr_agent
+%{vas_inst_root}/bin/ssvr_reporter
+%{vas_inst_root}/lib/DiskPatroller.pyc
+%{vas_inst_root}/lib/ssvr_agent.pyc
+%{vas_inst_root}/lib/ssvr_reporter.pyc
 
 %package cli
 Summary: Vastsky user commands
@@ -201,10 +230,12 @@ the vastsky storage manager.
 %{_bindir}/lvol_list
 %{_bindir}/lvol_show
 %{_bindir}/pdsk_list
+%{_bindir}/snap_create
 %{_bindir}/ssvr_list
 %{_sbindir}/hsvr_delete
 %{_sbindir}/pdsk_delete
 %{_sbindir}/ssvr_delete
+%{vas_inst_root}/lib/hsvr_delete.pyc
 %{vas_inst_root}/lib/hsvr_list.pyc
 %{vas_inst_root}/lib/lvol_attach.pyc
 %{vas_inst_root}/lib/lvol_create.pyc
@@ -212,8 +243,8 @@ the vastsky storage manager.
 %{vas_inst_root}/lib/lvol_detach.pyc
 %{vas_inst_root}/lib/lvol_list.pyc
 %{vas_inst_root}/lib/lvol_show.pyc
-%{vas_inst_root}/lib/pdsk_list.pyc
-%{vas_inst_root}/lib/ssvr_list.pyc
-%{vas_inst_root}/lib/hsvr_delete.pyc
 %{vas_inst_root}/lib/pdsk_delete.pyc
+%{vas_inst_root}/lib/pdsk_list.pyc
+%{vas_inst_root}/lib/snap_create.pyc
 %{vas_inst_root}/lib/ssvr_delete.pyc
+%{vas_inst_root}/lib/ssvr_list.pyc

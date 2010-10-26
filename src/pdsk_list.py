@@ -28,7 +28,7 @@
 # OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 # SUCH DAMAGE.
 
-__version__ = '$Id: pdsk_list.py 24 2010-07-05 02:58:29Z yamamoto2 $'
+__version__ = '$Id: pdsk_list.py 300 2010-10-07 03:59:43Z h-takaha $'
 
 import sys
 import getopt
@@ -36,7 +36,7 @@ import xmlrpclib
 import socket
 import string
 from vas_subr import *
-from vas_db import ALLOC_PRIORITY_STR
+from vas_const import ALLOC_PRIORITY_STR
 
 def usage_listPhysicalDisks(argv):
     print >> sys.stderr, 'usage: %s [-h|--help] [StorageServerID]' % (argv[0])
@@ -83,8 +83,8 @@ def listPhysicalDisks_print(array):
     else:
         print column % ('total %d GB' % capacity_total, 'available %d GB' % available_total, 'use% 0%')
 
-    column = "%-14s %-14s %-9s%6s %10s %10s %5s %-40s %-18s"
-    header = column % ('pdskid', 'ssvrid', 'priority', 'resync', 'capacity', 'available', 'use%', 'local_path', 'srp_name')
+    column = "%-14s %-14s %-9s%6s %10s %10s %5s %-18s"
+    header = column % ('pdskid', 'ssvrid', 'priority', 'resync', 'capacity', 'available', 'use%', 'local_path')
     print header
     for entry in array:
         if entry['capacity']:
@@ -92,7 +92,7 @@ def listPhysicalDisks_print(array):
         else:
             use = 0
         print column % ('pdsk-%08x' % entry['pdskid'], 'ssvr-%08x' % entry['ssvrid'], ALLOC_PRIORITY_STR[entry['priority']], \
-        '%d' % entry['resync'], '%3d GB' % entry['capacity'], '%d GB' % entry['available'], '%d%%' % use, entry['local_path'], entry['srp_name'])
+        '%d' % entry['resync'], '%3d GB' % entry['capacity'], '%d GB' % entry['available'], '%d%%' % use, entry['local_path'])
 
 def main():
     socket.setdefaulttimeout(SOCKET_DEFAULT_TIMEOUT)

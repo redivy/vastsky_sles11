@@ -28,13 +28,15 @@
 # OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 # SUCH DAMAGE.
 
+__version__ = '$Id: DiskPatroller.py 319 2010-10-20 05:54:09Z yamamoto2 $'
+
 import sys
 import os
 import subprocess
 import time
 from vas_conf import *
 from vas_subr import *
-from vas_db import *
+from vas_const import TARGET
 
 device_list = {} # 'devname': offset
 if SCRUB_EXTENT_SIZE % SCRUB_STRIPE_SIZE != 0:
@@ -103,7 +105,7 @@ def scrub(device):
             logger.debug('Device %s, stderr: %s' % (dev_path, stderr))
             logger.debug('Device %s, ret: %s' % (dev_path, ret))
             if ret > 0:
-		# XXX should use notifyBadBlocks?
+                # XXX should use notifyBadBlocks?
                 pdskid = int(device, 16)
                 logger.info("notifyFailure for pdskid %s" % pdskid);
                 subargs = {'ver': XMLRPC_VERSION, \

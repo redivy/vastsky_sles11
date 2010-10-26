@@ -30,7 +30,7 @@
 
 # start a daemon and keep it running by restarting.
 
-__version__ = '$Id: daemon_launcher.py 114 2010-07-23 04:54:52Z yamamoto2 $'
+__version__ = '$Id: daemon_launcher.py 279 2010-09-29 05:48:11Z yamamoto2 $'
 
 import os
 import sys

@@ -1,4 +1,4 @@
-$Id: vas_cli.txt 123 2010-07-27 04:44:41Z yamamoto2 $
+$Id: vas_cli.txt 356 2010-10-22 07:39:31Z yamamoto2 $
 
 Vastsky Command Reference Manual
 ================================
@@ -13,6 +13,7 @@ Logical volume operations
 - lvol_detach detach a logical volume
 - lvol_list   list logical volumes
 - lvol_show   show details of a logical volume
+- snap_create create a snapshot
 
 Resource info retrieval
 - hsvr_list   list head servers
@@ -65,7 +66,7 @@ lvol_delete
 <description>
     Delete the logical volume specified by <lvol>.
     <lvol> should be either a logical volume id or a logical volume name.
-    A logical volume attached to the head server can't be deleted.
+    A non-snapshot logical volume attached to a head server can't be deleted.
 
 <options>
     -h | --help  show usage
@@ -118,9 +119,13 @@ lvol_list
     <lvol> should be either a logical volume id or a logical volume name.
 
 ------------------------------------------------------------------------------------------
-lvolid         lvolname       redundancy capacity  hsvrid        failure     
-lvol-00000079  foo                     3    30 GB  ---           ---         
-lvol-0000008b  bar                     2    10 GB  ---           ---         
+lvolid         lvolname       redundancy capacity  hsvrid        failure      ctime              
+lvol-000008d1  foo                     2    10 GB  hsvr-00000001 ---          2010-10-20T05:45:39
+        snapshot-origin of lvol-000008da
+lvol-000008da  bar                     2    20 GB  hsvr-00000001 ---          2010-10-20T05:46:44
+        snapshot of lvol-000008d1
+lvol-000008df  hoge                    3    50 GB  hsvr-00000001 ---          2010-10-20T05:47:58
+lvol-000008e7  fofo                    3  1000 GB  hsvr-00000001 ---          2010-10-20T07:06:14
 -------------------------------------------------------------------------------------------
 
     - lvolid      logical volume id
@@ -134,6 +139,7 @@ lvol-0000008b  bar                     2    10 GB  ---           ---
 		  logical volume is currently being detached, "-" is prepended
 		  to the head server id.
     - failure     if there's any broken disk extents
+    - ctime       when the volume was created (in UTC)
 
 <options>
     -h | --help  show usage
@@ -152,12 +158,11 @@ lvol_show
     The following is an output of lvol_show.
 
 ----------------------------------------------------------------------------------------------
-lvolid: lvol-00000071 lvol_name: vol-0002 capacity: 10 GB redundancy: 3
+lvolid: lvol-000008d1 lvol_name: foo capacity: 10 GB redundancy: 2
 mirror           offset capacity | disk-extent    physical-disk    offset server         sync 
-mirr-00000072      0 GB    10 GB |                                                            
-                                 | dext-0000005f  pdsk-0000000b     40 GB ssvr-00000005  VALID
-                                 | dext-00000060  pdsk-0000000e     40 GB ssvr-00000006  VALID
-                                 | dext-0000006e  pdsk-00000002     50 GB ssvr-00000002  INVALID
+mirr-000008d4      0 GB    10 GB |                                                            
+                                 | dext-00000002  pdsk-00000001      0 GB ssvr-00000001  INSYNC
+                                 | dext-000002f2  pdsk-00000005      0 GB ssvr-00000002  INSYNC
 -----------------------------------------------------------------------------------------------
 
   The first line is a summary of the logical volume.
@@ -174,11 +179,29 @@ mirr-00000072      0 GB    10 GB |
     * offset         the offset in the physical disk
     * server         the storage server to which the physical disk is attached
     * sync           the status of the extent
-           VALID    normal
-           INVALID  not in-sync yet
+           ALLOCATED has not been attached yet
+           INSYNC    normal
+           SPARE     needs resync
 
 <options>
     -h | --help  show usage
+
+
+snap_create
+-----------
+
+<synopsis>
+    snap_create [options] origin_lvol snapshot_lvolname
+
+<description>
+    Take a snapshot of the logical volume specified by <origin_lvol>.
+    <origin_lvol> should be either a logical volume id or a logical volume name.
+
+    On a successful exit, snap_create outputs the logical volume id
+    of the created snapshot logical volume.
+
+<options>
+    -h | --help  Show usage
 
 
 hsvr_list
@@ -195,20 +218,21 @@ hsvr_list
     The following is an output of hsvr_list.
 
 -------------------------------------------------------------
-hsvrid         priority  ip_data_1     ip_data_2     resync
-hsvr-00000002  HIGH      192.168.20.2  10.100.20.2       0
-hsvr-00000003  HIGH      192.168.20.1  10.100.20.1       0
-hsvr-00000004  HIGH      192.168.20.5  10.100.20.5       0
-hsvr-00000005  HIGH      192.168.20.3  10.100.20.3       0
-hsvr-00000006  HIGH      192.168.20.4  10.100.20.4       0
+hsvrid         priority  resync
+hsvr-00000001  HIGH          0
+        inet 192.168.20.6
+hsvr-00000002  HIGH          0
+        inet 192.168.20.7
+hsvr-00000003  HIGH          0
+        inet 192.168.10.9
 -------------------------------------------------------------
 
   - hsvrid    head server id.
   - priority  the status of the head server
        HIGH     working normally
        OFFLINE  being down
-  - ip_data_1, ip_data_2  ip addresses
   - resync    the number of mirror extents being resync-ed
+  - inet       ip address
 
 <options>
     -h | --help  show usage
@@ -228,14 +252,14 @@ ssvr_list
     The following is an output of ssvr_list
 
 --------------------------------------------------------------------------------------
-total 2831 GB  available 2803 GB use% 0%       
-ssvrid         priority  ip_data_1     ip_data_2     resync   capacity  available  use%
-ssvr-00000002  HIGH      192.168.10.8  10.100.10.8       0     447 GB     442 GB    1%
-ssvr-00000003  HIGH      192.168.10.5  10.100.10.5       0     447 GB     442 GB    1%
-ssvr-00000004  HIGH      192.168.10.6  10.100.10.6       0     447 GB     443 GB    0%
-ssvr-00000005  HIGH      192.168.10.3  10.100.10.3       0     447 GB     443 GB    0%
-ssvr-00000006  HIGH      192.168.10.7  10.100.10.7       0     447 GB     443 GB    0%
-ssvr-00000007  HIGH      192.168.10.4  10.100.10.4       0     596 GB     590 GB    1%
+total 22332 GB available 15400 GB use% 31%      
+ssvrid         priority  resync   capacity  available  use%
+ssvr-00000001  HIGH          0    7444 GB    2642 GB   64%
+        inet 192.168.20.6
+ssvr-00000002  HIGH          0    7444 GB    6374 GB   14%
+        inet 192.168.10.1
+ssvr-00000003  HIGH          0    7444 GB    6384 GB   14%
+        inet 192.168.10.2
 ----------------------------------------------------------------------------------------
 
   The first line is a summary of storage servers being shown.
@@ -245,7 +269,6 @@ ssvr-00000007  HIGH      192.168.10.4  10.100.10.4       0     596 GB     590 GB
         HIGH     working normally
         OFFLINE  being down
         HALT     stopped due to vastsky system shutdown
-  - ip_data_1, ip_data_2   ip addresses
   - resync     the number of mirror extents being resync-ed
   - capacity   the total capacity of physical disks attached to the storage
 	       server
@@ -253,6 +276,7 @@ ssvr-00000007  HIGH      192.168.10.4  10.100.10.4       0     596 GB     590 GB
 	       storage server
   - use%       the percentage of currently in-use space of physical disks
 	       attached to the storage server
+  - inet       ip address
 
 <options>
     -h | --help  show usage
@@ -272,14 +296,20 @@ pdsk_list
     The following is an output of pdsk_list
 
 ---------------------------------------------------------------------------------------------
-total 7485 GB  available 6765 GB use% 9%       
+total 22332 GB available 15400 GB use% 31%      
 pdskid         ssvrid         priority resync   capacity  available  use% local_path        
-pdsk-00000002  ssvr-00000002  HIGH          0     499 GB     449 GB   10% /dev/disk/by-id/VAS-DISK-ssvr-00000002-1
-pdsk-00000003  ssvr-00000002  HIGH          0     499 GB     449 GB   10% /dev/disk/by-id/VAS-DISK-ssvr-00000002-2
-pdsk-00000004  ssvr-00000002  HIGH          0     499 GB     449 GB   10% /dev/disk/by-id/VAS-DISK-ssvr-00000002-3
-pdsk-00000005  ssvr-00000003  HIGH          0     499 GB     449 GB   10% /dev/disk/by-id/VAS-DISK-ssvr-00000003-1
-pdsk-00000006  ssvr-00000003  HIGH          0     499 GB     449 GB   10% /dev/disk/by-id/VAS-DISK-ssvr-00000003-2
-pdsk
+pdsk-00000001  ssvr-00000001  HIGH          0    1861 GB    1321 GB   29% /dev/disk/by-id/scsi-SATA_Hitachi_HDS7220_JK1101YAG665EV
+pdsk-00000002  ssvr-00000001  FAULTY        0    1861 GB       0 GB  100% /dev/disk/by-id/scsi-SATA_Hitachi_HDS7220_JK1101YAG9JNUV
+pdsk-00000003  ssvr-00000001  FAULTY        0    1861 GB       0 GB  100% /dev/disk/by-id/scsi-SATA_Hitachi_HDS7220_JK1131YAG9E9YV
+pdsk-00000004  ssvr-00000001  HIGH          0    1861 GB    1321 GB   29% /dev/disk/by-id/scsi-SATA_Hitachi_HDS7220_JK1131YAG9T3WV
+pdsk-00000005  ssvr-00000002  HIGH          0    1861 GB    1591 GB   14% /dev/disk/by-id/scsi-SATA_Hitachi_HDS7220_JK1101YAG3VXZS
+pdsk-00000006  ssvr-00000002  HIGH          0    1861 GB    1591 GB   14% /dev/disk/by-id/scsi-SATA_Hitachi_HDS7220_JK1101YAG9GB0V
+pdsk-00000007  ssvr-00000002  HIGH          0    1861 GB    1591 GB   14% /dev/disk/by-id/scsi-SATA_Hitachi_HDS7220_JK1101YAG1JNHV
+pdsk-00000008  ssvr-00000003  HIGH          0    1861 GB    1591 GB   14% /dev/disk/by-id/scsi-SATA_Hitachi_HDS7220_JK1101YAG7073V
+pdsk-00000009  ssvr-00000002  HIGH          0    1861 GB    1601 GB   13% /dev/disk/by-id/scsi-SATA_Hitachi_HDS7220_JK1101YAG70H0V
+pdsk-0000000a  ssvr-00000003  HIGH          0    1861 GB    1591 GB   14% /dev/disk/by-id/scsi-SATA_Hitachi_HDS7220_JK1131YAG9HD9V
+pdsk-0000000b  ssvr-00000003  HIGH          0    1861 GB    1601 GB   13% /dev/disk/by-id/scsi-SATA_Hitachi_HDS7220_JK1131YAGAL2UV
+pdsk-0000000c  ssvr-00000003  HIGH          0    1861 GB    1601 GB   13% /dev/disk/by-id/scsi-SATA_Hitachi_HDS7220_JK1131YAG9GEBV
 -----------------------------------------------------------------------------------------------
 
   the first line is a summary of physical disks being shown.

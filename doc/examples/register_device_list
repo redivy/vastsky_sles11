@@ -1,0 +1,7 @@
+# The list of local disks to be exported and used for Vastsky. each line of
+# the file should start with "pdsk," which is followed by a local pathname
+# of the disk.  It's recommended to use /dev/disk/by-id/ pathnames.
+#
+# Example:
+#pdsk,/dev/disk/by-id/scsi-SATA_Hitachi_HDS7220_JK1101YAG3VXZS
+#pdsk,/dev/disk/by-id/scsi-SATA_Hitachi_HDS7220_JK1101YAG9GB0V

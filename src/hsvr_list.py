@@ -28,14 +28,14 @@
 # OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 # SUCH DAMAGE.
 
-__version__ = '$Id: hsvr_list.py 24 2010-07-05 02:58:29Z yamamoto2 $'
+__version__ = '$Id: hsvr_list.py 300 2010-10-07 03:59:43Z h-takaha $'
 
 import sys
 import getopt
 import xmlrpclib
 import socket
 from vas_subr import *
-from vas_db import ALLOC_PRIORITY_STR
+from vas_const import ALLOC_PRIORITY_STR
 
 def usage_listHeadServers(argv):
     print >> sys.stderr, 'usage: %s [-h|--help] [HeadServerID]' % (argv[0])
@@ -71,11 +71,13 @@ def getopt_listHeadServers(argv):
     return obj
 
 def listHeadServers_print(array):
-    column = "%-14s %-9s %-13s %-13s %5s"
-    header = column % ('hsvrid', 'priority', 'ip_data_1', 'ip_data_2', 'resync')
+    column = "%-14s %-9s %5s"
+    header = column % ('hsvrid', 'priority', 'resync')
     print header
     for entry in array:
-        print column % ('hsvr-%08x' % entry['hsvrid'], ALLOC_PRIORITY_STR[entry['priority']], entry['ip_data'][0], entry['ip_data'][1], entry['resync'])
+        print column % ('hsvr-%08x' % entry['hsvrid'], ALLOC_PRIORITY_STR[entry['priority']], entry['resync'])
+        for ip in entry['ip_data']:
+            print "\tinet %s" % ip
 
 def main():
     socket.setdefaulttimeout(SOCKET_DEFAULT_TIMEOUT)

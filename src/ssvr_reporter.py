@@ -28,11 +28,10 @@
 # OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 # SUCH DAMAGE.
 
-"""Invoke some storage manager related daemons and register current storage server, disks and a cache device to the storage manager."""
 # report local resources to the storage manager.
 # start daemons including ssvr_agent.
 
-__version__ = '$Id: ssvr_reporter.py 113 2010-07-23 04:24:12Z yamamoto2 $'
+__version__ = '$Id: ssvr_reporter.py 319 2010-10-20 05:54:09Z yamamoto2 $'
 
 import sys
 import os
@@ -65,7 +64,7 @@ def system_down():
 
 def register_resources(refresh):
 
-    ipaddrlist = (socket.gethostbyname(socket.gethostname()+'%s' % DATA1_SUFFIX), socket.gethostbyname(socket.gethostname()+'%s' % DATA2_SUFFIX))
+    ipaddrlist = get_ipaddrlist()
 
     # check existence of SSVRID_FILE
     initial_setup = True
@@ -79,6 +78,11 @@ def register_resources(refresh):
         f = open(SSVR_REPORTER_PID, "w")
         f.writelines("%d\n" % os.getpid())
         f.close()
+
+    # chechk existence of REGISTER_DEVICE_LIST
+    if not os.path.exists(REGISTER_DEVICE_LIST):
+        # nothing to register
+        return
 
     if initial_setup:
         refresh = False
@@ -96,7 +100,7 @@ def register_resources(refresh):
                 ssvrid = int(f.readline().rstrip().split('-')[1], 16)
                 f.close()
             else:
-                subargs = {'ver': XMLRPC_VERSION, 'ip_data': (ipaddrlist[0], ipaddrlist[1])}
+                subargs = {'ver': XMLRPC_VERSION, 'ip_data': ipaddrlist}
                 res = send_request(host_storage_manager_list, port_storage_manager, "registerStorageServer", subargs)
 
                 ssvrid = res
@@ -139,13 +143,11 @@ def register_resources(refresh):
         for file in pdsk_paths:
             try:
                 sectors = getDiskSize(file)
-                srp_name = executecommand("cat /proc/scsi_tgt/vdisk/vdisk | grep '%s' | awk '{print $1}'" % ( os.path.realpath(file)) )
 
                 subargs = { \
                 'ver': XMLRPC_VERSION, \
                 'ssvrid': ssvrid, \
                 'capacity': str(sectors), \
-                'srp_name': srp_name, \
                 'local_path': file, \
                 }
                 send_request(host_storage_manager_list, port_storage_manager, "registerPhysicalDisk", subargs)
@@ -163,13 +165,11 @@ def register_resources(refresh):
         for file in new_pdsk_paths:
             try:
                 sectors = getDiskSize(file)
-                srp_name = executecommand("cat /proc/scsi_tgt/vdisk/vdisk | grep '%s' | awk '{print $1}'" % ( os.path.realpath(file)) )
 
                 subargs = { \
                 'ver': XMLRPC_VERSION, \
                 'ssvrid': ssvrid, \
                 'capacity': str(sectors), \
-                'srp_name': srp_name, \
                 'local_path': file, \
                 }
                 pdskid = send_request(host_storage_manager_list, port_storage_manager, "registerPhysicalDisk", subargs)
@@ -182,15 +182,15 @@ def register_resources(refresh):
     pdsks = zip(pdsk_paths, pdskids)
     new_pdsks = zip(new_pdsk_paths, new_pdskids)
     for pdsk in pdsks + new_pdsks:
-	path, id = pdsk
-	if id == 0:
-	    continue
-	subargs = { \
-	'disk_dev': path, \
-	'pdskid': id, \
-	'iqn': 'iqn.%s' % (iqn_prefix_iscsi), \
-	}
-	activatePhysicalDisk(subargs)
+        path, id = pdsk
+        if id == 0:
+            continue
+        subargs = { \
+        'disk_dev': path, \
+        'pdskid': id, \
+        'iqn': 'iqn.%s' % (iqn_prefix_iscsi), \
+        }
+        activatePhysicalDisk(subargs)
 
     # [re-]generate device_list file
     if initial_setup or refresh:

@@ -1,4 +1,5 @@
 #!/bin/sh
+# $Id: vas_hsvr 328 2010-10-22 02:51:55Z yamamoto2 $
 
 # Copyright (c) 2010 VA Linux Systems Japan K.K. All rights reserved.
 #
@@ -28,10 +29,10 @@
 # OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 # SUCH DAMAGE.
 
-# chkconfig: 2345 99 99
+# chkconfig: 2345 74 74
 # description:  Starts and stops head server
 
-. /lib/lsb/init-functions
+. /etc/init.d/functions
 
 STORAGE_MANAGER_BIN=/opt/vas/bin
 RETVAL=0
@@ -48,12 +49,12 @@ case "$1" in
 	;;
   stop)
 	if [ -f /var/run/hsvr_reporter.run ] ; then
-		killproc -p /var/run/hsvr_reporter.run ${STORAGE_MANAGER_BIN}/hsvr_reporter
+		killproc -p /var/run/hsvr_reporter.run
 	fi
-	killproc -p /var/run/hsvr_agent.run ${STORAGE_MANAGER_BIN}/daemon_launcher
+	killproc -p /var/run/hsvr_agent.run
 	RETVAL=$?
 	[ $RETVAL -eq 0 ] && rm -f /var/run/hsvr_agent.run
-	killproc -p /var/run/lvol_error.run ${STORAGE_MANAGER_BIN}/daemon_launcher
+	killproc -p /var/run/lvol_error.run
 	RETVAL=$?
 	[ $RETVAL -eq 0 ] && rm -f /var/run/lvol_error.run
 	;;

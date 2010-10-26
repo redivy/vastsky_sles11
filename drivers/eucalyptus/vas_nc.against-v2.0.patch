@@ -1,0 +1,92 @@
+diff -ur ../../eucalyptus-2.0.0/node/handlers.c ./handlers.c
+--- ../../eucalyptus-2.0.0/node/handlers.c	2010-08-23 02:53:44.000000000 +0900
++++ ./handlers.c	2010-10-07 20:17:30.000000000 +0900
+@@ -1225,3 +1225,19 @@
+     return retval;
+ }
+ 
++void vas_attachVolume(const struct nc_state_t *nc, const char *zone, const char *volumeId) {
++    char cmdbuf[MAX_PATH];
++ 
++    snprintf (cmdbuf, MAX_PATH, "%s/usr/lib/eucalyptus/euca_rootwrap %s/usr/share/eucalyptus/vas_attachVolume %s %s",nc->home, nc->home, zone, volumeId);
++    logprintfl (EUCAINFO, "vas_attachVolume invoked (volumeId=%s)\n", volumeId);
++    system_output(cmdbuf);
++}
++
++void vas_detachVolume(const struct nc_state_t *nc, const char *zone, const char *volumeId) {
++    char cmdbuf[MAX_PATH];
++    
++    snprintf (cmdbuf, MAX_PATH, "%s/usr/lib/eucalyptus/euca_rootwrap %s/usr/share/eucalyptus/vas_detachVolume %s %s",nc->home, nc->home, zone, volumeId);
++    logprintfl (EUCAINFO, "vas_detachVolume invoked (volumeId=%s)\n", volumeId);
++    system_output(cmdbuf);
++}
++
+diff -ur ../../eucalyptus-2.0.0/node/handlers_xen.c ./handlers_xen.c
+--- ../../eucalyptus-2.0.0/node/handlers_xen.c	2010-08-23 02:53:44.000000000 +0900
++++ ./handlers_xen.c	2010-10-08 10:13:29.000000000 +0900
+@@ -413,6 +413,9 @@
+     virConnectPtr *conn;
+     struct stat statbuf;
+ 
++    logprintfl(EUCAINFO, "vasinfo: instancdId:%s, volumeId:%s, remoteDev:%s, localDev:%s.\n", instanceId, volumeId, remoteDev, localDev);
++    
++
+     // fix up format of incoming local dev name, if we need to
+     ret = convert_dev_names (localDev, localDevReal, NULL);
+     if (ret)
+@@ -437,6 +440,8 @@
+             int is_iscsi_target = 0;
+             char *local_iscsi_dev;
+             rc = 0;
++
++#if 0 /* nasty hack for vastsky */
+             if(check_iscsi(remoteDev)) {
+                 is_iscsi_target = 1;
+                 /*get credentials, decrypt them*/
+@@ -457,6 +462,13 @@
+                    rc = 1;
+                 }
+ 	    }
++#endif
++            /* vastsky */
++            vas_attachVolume(nc, remoteDev, volumeId);
++            snprintf (xml, 1024, "<disk type='block'><driver name='phy'/><source dev='/dev/vas/euca-%s-%s'/><target dev='%s'/></disk>", remoteDev, volumeId, localDevReal);
++
++            
++
+             if (!rc) {
+ 	        /* protect Xen calls, just in case */
+                 sem_p (hyp_sem);
+@@ -542,6 +554,8 @@
+ 	    FILE *FH;
+ 	            int is_iscsi_target = 0;
+             char *local_iscsi_dev;
++
++#if 0 /* nasty hack for vastsky */
+             if(check_iscsi(remoteDev)) {
+                 is_iscsi_target = 1;
+                 /*get credentials, decrypt them*/
+@@ -553,6 +567,12 @@
+             } else {
+                 snprintf (xml, 1024, "<disk type='block'><driver name='phy'/><source dev='%s'/><target dev='%s'/></disk>", remoteDev, localDevReal);
+ 	    }
++#endif
++            /* vastsky */
++
++            snprintf (xml, 1024, "<disk type='block'><driver name='phy'/><source dev='/dev/vas/euca-%s-%s'/><target dev='%s'/></disk>", remoteDev, volumeId, localDevReal);
++           
++
+             /* protect Xen calls, just in case */
+             sem_p (hyp_sem);
+ 	    pid = fork();
+@@ -581,6 +601,10 @@
+ 		err = 0;
+ 	      }
+ 	    }
++
++            /* vastsky: detach volume from the NC */
++            vas_detachVolume(nc, remoteDev,volumeId);
++
+ #if 0
+ 	    if (!getuid()) {
+ 	      sem_p(hyp_sem);

@@ -28,54 +28,113 @@
 # OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 # SUCH DAMAGE.
 
+__version__ = '$Id: lvol_error.py 319 2010-10-20 05:54:09Z yamamoto2 $'
+
 import sys
 import os
 import re
 import time
 import signal
-import vas_db
-import mdstat
+from vas_const import TARGET
 from vas_conf import *
 from vas_subr import *
 
-lvol_re = re.compile("^lvol-[0-f]+$")
+mirrordev_re = re.compile("^[0-f]+$")
+dext_re = re.compile("^[0-f]+\-[0-f]+$")
+mddev_re = re.compile("^dev-")
+
+def mirrorid_to_md(mirrorid):   # returns md dev name (ex. md255) of the mirror
+    md = None
+    try:
+        stbuf = os.stat(getMirrorDevPath(mirrorid))
+        md = 'md%d' % (os.minor(stbuf.st_rdev))
+    except:
+        logger.debug('mirrorid_to_md fail %d' % (mirrorid))
+    return md
+
+def get_mirror_status(mirrorid):
+    status = {}
+    md = mirrorid_to_md(mirrorid)
+    if md:
+        for dm in get_dmdevs(md):
+            state = get_dm_state(md, dm)
+            dextid = dm_to_dextid(md, dm)
+            status[dextid] = state
+    return status
+
+def find_mirrors():     # returns a list of mirrorid in the system
+    mirrors = []
+    for dent in os.listdir(MD_DEVICE_DIR):
+        if mirrordev_re.match(dent):
+            mirrors.append(int(dent, 16))
+        else:
+            logger.debug('unknown entry "%s" found in %s' % (dent, MD_DEVICE_DIR))
+    return mirrors
+
+def get_dmdevs(md):
+    md_path = '/sys/block/%s/md' % (md)
+    dmdevs = []
+    for dent in os.listdir(md_path):
+        if mddev_re.match(dent):        # ex. dev-dm-20
+            dmdevs.append(dent[4:])     # ex. dm-20
+    return dmdevs
+
+def get_dm_state(md, dm):
+    f = open('/sys/block/%s/md/dev-%s/state' % (md, dm))
+    line = f.readline()
+    f.close()
+    return line.rstrip()
+
+def get_dm_devno(md, dm):
+    f = open('/sys/block/%s/md/dev-%s/block/dev' % (md, dm))
+    line = f.readline()
+    f.close()
+    (major, minor) = re.split(' ', line.replace(':', ' '))
+    return int(major), int(minor)
+
+def devno_to_dextid(major, minor):
+    for dent in os.listdir(DM_DEVICE_DIR):
+        if dext_re.match(dent):
+            stbuf = os.stat(getDmDevPath(dent))
+            if major == os.major(stbuf.st_rdev) and minor == os.minor(stbuf.st_rdev):
+                id = int(dent[9:], 16)
+                return id
+    return 0
+
+def dm_to_dextid(md, dm):
+    major, minor = get_dm_devno(md, dm)
+    id = devno_to_dextid(major, minor)
+    if id == 0:
+        logger.debug('no extent found (%s %s)' % (md, dm))
+    return id
 
 def main():
+    signal.signal(signal.SIGCHLD, signal.SIG_IGN)
     while True:
         time.sleep(LVOL_ERROR_INTERVAL)
-        signal.signal(signal.SIGCHLD, signal.SIG_DFL)
 
-        linear_list = []
-        for dent in os.listdir('/dev/mapper/'):
-            if lvol_re.match(dent):
-                linear_list.append(dent)
+        mirrors = find_mirrors()
+#        logger.debug('mirrors %s' % (mirrors))
 
         faulty_list = []
-        for linear in linear_list:
-            try:
-                deps, _, _, _ = mdstat.getMirrorList(linear, {}, {})
-            except:
-                logger.error("getMirrorList failed: lvol %s" % (linear))
+        for mid in mirrors:
+#            logger.debug('%s' % (get_mirror_status(mid)))
+            md = mirrorid_to_md(mid)
+            if not md:
                 continue
-            logger.debug('deps %s' % (deps))
-            for md in deps.values():
-                try:
-                    dexts, _ = mdstat.getDextList(md, {})
-                except:
-                    logger.error("getDextList failed: md %s" % (md))
-                    continue
-                logger.debug('dexts in %s: %s' % (md, dexts))
-                for dext in dexts:
-                    if dext['dext_status'] == 'faulty':
-                        faulty_list.append(dext['dextid'])
+            for dm in get_dmdevs(md):
+                state = get_dm_state(md, dm)
+                if state == 'faulty':
+                    dextid = dm_to_dextid(md, dm)
+                    if dextid != 0:
+                        faulty_list.append(dextid)
 
-        signal.signal(signal.SIGCHLD, signal.SIG_IGN)
         for lvol in faulty_list:
             pid = os.fork()
             if pid != 0:
                 continue
             try:
-                subargs = {'ver': XMLRPC_VERSION, 'target': vas_db.TARGET['LVOL'], 'targetid': lvol}
+                subargs = {'ver': XMLRPC_VERSION, 'target': TARGET['LVOL'], 'targetid': lvol}
                 send_request(host_storage_manager_list, port_storage_manager, "notifyFailure", subargs)
             except:
                 logger.error("notifyFailure LVOL %08x was called, but got an error." % (lvol))

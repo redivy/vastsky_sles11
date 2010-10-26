@@ -1,0 +1,72 @@
+
+$Id: README 340 2010-10-22 03:53:09Z sugihara $
+
+  This directory contains Eucalyptus(http://eucalyptus.com/) integration code
+  for vastsky. This allows you to use vastsky storage volume as 
+  Eucalyptus' EBS volume. 
+
+  Unfortunately, Eucalyptus (at least OSS version) doesn't 
+  provide runtime pluggability for external storage. So it is required to
+  recompile with some of the code in this directory. Enjoy!
+
+Source files:
+
+  o SC side: 
+    - VASManager.java:
+      This implements LogicalStorageManager interface
+      for vastsky. 
+
+    - vas_sc_driver.py:
+      These get called from createVolume(), deleteVolume(), createSnapshot(), 
+      deleteSnapshot in VASManager class.
+      This should be linked from/copied to vas_<methodName> executable file.
+          
+  o NC side:
+    - vas_nc.against-v2.0.patch:
+       This allows Node Controller to attach/detach vastsky volumes to/from
+       its hosting running instances. Currently this is a bit nasty hack.
+       Need to push this driver forward to the community.
+
+    - vas_nc_driver.py
+      This is a callee from NC to handle attach/detach requests.
+
+  o common library:
+    - vas_euca_driver.py 
+       
+
+
+Build and install:
+
+  - Edit build_n_install.sh to set SRC_TOPDIR to the eucalyptus
+    source dir. Only tested with a directory as SRC_TOPDIR that has previously 
+    built binaries without any modification to the source files.
+
+  - Execute build_n_install.sh
+
+  - deploy the resulting objects accordingly to the nodes that you have in your system.
+
+
+Runtime requirements:
+
+  - cli tools of vastsky need to be installed both on CLC and NC. 
+
+  - Set the following config parameter in eucalyptus.conf
+
+    CLOUD_OPTS="-Debs.storage.manager=VASManager"
+
+
+Known issues and limitations:
+
+  - Currently we only have xen version for NC code, but supporting KVM should 
+    be piece of cake or just a matter of time. 
+
+  - In some cases, Eucalyptus doesn't catch error although we throw an exception.
+    Particularly, watch out when creating/deleting/(creating volume from) snapshots.
+
+  - Creating volume from a snapshot can only be possible when the original of the 
+    snapshot is either not attached to anywhere or attached to the storage controller.
+
+TODO:
+
+  - better error handling
+

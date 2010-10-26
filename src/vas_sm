@@ -1,4 +1,5 @@
 #!/bin/sh
+# $Id: vas_sm 328 2010-10-22 02:51:55Z yamamoto2 $
 
 # Copyright (c) 2010 VA Linux Systems Japan K.K. All rights reserved.
 #
@@ -31,11 +32,34 @@
 # chkconfig: 2345 99 99
 # description:  Starts and stops storage manager
 
-. /lib/lsb/init-functions
+. /etc/init.d/functions
 
 STORAGE_MANAGER_BIN=/opt/vas/bin
 
 RETVAL=0
+
+start()
+{
+	[ -x ${STORAGE_MANAGER_BIN}/daemon_launcher ] || exit 5
+	[ -x ${STORAGE_MANAGER_BIN}/storage_manager ] || exit 5
+	[ -x ${STORAGE_MANAGER_BIN}/check_servers ] || exit 5
+
+	[ -f /var/run/vas_sm.run ] && exit 0	# return success if already running for heartbeat
+
+	${STORAGE_MANAGER_BIN}/daemon_launcher -a ${STORAGE_MANAGER_BIN}/storage_manager /var/run/vas_sm.run
+	RETVAL=$?
+	[ $RETVAL -eq 0 ] && ${STORAGE_MANAGER_BIN}/daemon_launcher -n 1 ${STORAGE_MANAGER_BIN}/check_servers /var/run/check_servers.run
+	RETVAL=$?
+}
+
+stop()
+{
+	killproc -p /var/run/check_servers.run
+	rm -f /var/run/check_servers.run
+	killproc -p /var/run/vas_sm.run
+	rm -f /var/run/vas_sm.run
+	RETVAL=0
+}
 
 case "$1" in
   init)
@@ -48,25 +72,10 @@ case "$1" in
 	fi
 	;;
   start)
-	[ -x ${STORAGE_MANAGER_BIN}/daemon_launcher ] || exit 5
-	[ -x ${STORAGE_MANAGER_BIN}/storage_manager ] || exit 5
-	[ -x ${STORAGE_MANAGER_BIN}/check_servers ] || exit 5
-
-	if [ -f /var/run/vas_sm.run ] ; then
-		RETVAL=1
-	else
-		[ $RETVAL -eq 0 ] && ${STORAGE_MANAGER_BIN}/daemon_launcher -a ${STORAGE_MANAGER_BIN}/storage_manager /var/run/vas_sm.run
-		[ $RETVAL -eq 0 ] && ${STORAGE_MANAGER_BIN}/daemon_launcher -n 1 ${STORAGE_MANAGER_BIN}/check_servers /var/run/check_servers.run
-		RETVAL=$?
-	fi
+	start
 	;;
   stop)
-	killproc -p /var/run/check_servers.run ${STORAGE_MANAGER_BIN}/daemon_launcher
-	RETVAL=$?
-	[ $RETVAL -eq 0 ] && rm -f /var/run/check_servers.run
-	killproc -p /var/run/vas_sm.run ${STORAGE_MANAGER_BIN}/daemon_launcher
-	RETVAL=$?
-	[ $RETVAL -eq 0 ] && rm -f /var/run/vas_sm.run
+	stop
 	;;
   status)
 	if [ -f /var/run/vas_sm.run ] ; then
@@ -76,8 +85,8 @@ case "$1" in
 	fi
 	;;
   restart)
-	$0 stop
-	$0 start
+	stop
+	start
 	;;
   shutdown)
 	if [ -f /var/run/vas_sm.run ] ; then

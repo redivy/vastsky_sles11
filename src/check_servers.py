@@ -32,11 +32,13 @@
 # method and report unresponsive ones to the storage manager via notifyFalure
 # method.
 
+__version__ = '$Id: check_servers.py 319 2010-10-20 05:54:09Z yamamoto2 $'
+
 import os
 import sys
 import time
 import signal
-import vas_db
+from vas_const import TARGET, ALLOC_PRIORITY_STR
 from vas_conf import *
 from vas_subr import *
 
@@ -62,10 +64,10 @@ def call_agent(ipaddr_list, port):
 def check_agent(type, id, ipaddr_list):
     if type == "hsvr":
         port = port_hsvr_agent
-        target = vas_db.TARGET['HSVR']
+        target = TARGET['HSVR']
     else: # "ssvr"
         port = port_ssvr_agent
-        target = vas_db.TARGET['SSVR']
+        target = TARGET['SSVR']
 
     pid = os.fork()
     if pid != 0:
@@ -95,12 +97,12 @@ def main():
             continue
 
         for head in head_servers:
-            if vas_db.ALLOC_PRIORITY_STR[head['priority']] != 'HIGH':
+            if ALLOC_PRIORITY_STR[head['priority']] != 'HIGH':
                 continue
             check_agent("hsvr", head['hsvrid'], head['ip_data'])
 
         for storage in storage_servers:
-            if vas_db.ALLOC_PRIORITY_STR[storage['priority']] != 'HIGH':
+            if ALLOC_PRIORITY_STR[storage['priority']] != 'HIGH':
                 continue
             check_agent("ssvr", storage['ssvrid'], storage['ip_data'])
 

@@ -28,11 +28,10 @@
 # OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 # SUCH DAMAGE.
 
-"""Invoke some storage manager related daemons and register current head server and a cache device to the storage manager."""
 # report local resources to the storage manager.
 # start daemons including hsvr_agent.
 
-__version__ = '$Id: hsvr_reporter.py 104 2010-07-21 07:05:47Z yamamoto2 $'
+__version__ = '$Id: hsvr_reporter.py 319 2010-10-20 05:54:09Z yamamoto2 $'
 
 import sys
 import os
@@ -44,7 +43,7 @@ import traceback
 from subprocess import *
 from vas_conf import *
 from vas_subr import *
-from vas_db import TARGET
+from vas_const import TARGET
 
 def __invoke_daemons():
     executecommand("%s -a %s %s" % (DAEMON_LAUNCHER_CMD, HSVR_AGENT_CMD, HSVR_AGENT_PID))
@@ -52,7 +51,7 @@ def __invoke_daemons():
 
 def register_resources():
 
-    ipaddrlist = (socket.gethostbyname(socket.gethostname()+'%s' % DATA1_SUFFIX), socket.gethostbyname(socket.gethostname()+'%s' % DATA2_SUFFIX))
+    ipaddrlist = get_ipaddrlist()
 
     # check existence of HSVRID_FILE
     initial_setup = True
@@ -77,7 +76,7 @@ def register_resources():
     hsvrid = 0
     while hsvrid == 0:
         try:
-            subargs = {'ver': XMLRPC_VERSION, 'ip_data': (ipaddrlist[0], ipaddrlist[1])}
+            subargs = {'ver': XMLRPC_VERSION, 'ip_data': ipaddrlist}
             res = send_request(host_storage_manager_list, port_storage_manager, "registerHeadServer", subargs)
 
             hsvrid = res

@@ -28,7 +28,7 @@
 # OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 # SUCH DAMAGE.
 
-__version__ = '$Id: hsvr_agent.py 104 2010-07-21 07:05:47Z yamamoto2 $'
+__version__ = '$Id: hsvr_agent.py 319 2010-10-20 05:54:09Z yamamoto2 $'
 
 import sys
 import getopt
@@ -36,480 +36,250 @@ import time
 import SimpleXMLRPCServer
 import xmlrpclib
 import socket
-import commands
 import os
 import signal
-import pickle
-import subprocess
 import traceback
 import errno
 import threading
+import dag
+import worker
+import mynode
+import hsvr_dag
+
 from SocketServer import ThreadingMixIn
 from vas_conf import *
-from vas_subr import lineno, gtos, executecommand, executecommand_retry, \
-    dispatch_and_log, get_lvolstruct_of_lvoltype, get_arg_max, \
-    getDextDevName, getLinearDevName, getMetaDevName, getDataDevName, \
-    getDmDevPath, getDextDevPath, getLinearDevPath, getMetaDevPath, \
-    getDataDevPath, getMirrorDevPath, getMultiPathDevice, \
-    execute_retry_not_path_exist, execute_retry_path_exist, setupDextDevice, \
-    cleanupMultiPathDevice
-from vas_db import LVOLTYPE, BIND_STATUS, MIRROR_STATUS
-from mdstat import get_rebuild_status
+from vas_subr import lineno, executecommand, dispatch_and_log, \
+    getDextDevPath, getMirrorDevPath, mand_keys, start_worker
+from event import EventRecorder, get_event_status, EVENT_STATUS
+from lvol_error import get_mirror_status
+
+def mydaglogger(n, e, u):
+    if u:
+        logger.debug("DAG: %s %s (undo)\n" % (n, e))
+    else:
+        logger.debug("DAG: %s %s\n" % (n, e))
+
+def noop(n):
+    pass
+
+def get_lvol_path_from_lvolstruct(lvolstruct):
+    return "%s/%s" % (VAS_DEVICE_DIR, lvolstruct['lvolspec']['lvolname'])
 
 class HsvrAgent:
     def __init__(self):
-        self.monitors = {}
+        self.dag_worker = worker.Worker(16)
+        self.event_record = EventRecorder()
 
     def _dispatch(self, method, params):
         return dispatch_and_log(self, method, params)
 
-    def __connect(self, lvolstruct_mirrors):
-        if SCSI_DRIVER == 'srp':
+    def attachLogicalVolume(self, data):
+        eventid, lvolstruct = mand_keys(data, 'eventid', 'lvolstruct')
+        self.event_record.lock()
+        if self.event_record.event_exist(eventid):
+            self.event_record.unlock()
             return 0
-        __loginIscsiTarget(self, lvolstruct_mirrors)
-
-    def __disconnect(self, lvolstruct_mirrors):
-        if SCSI_DRIVER == 'srp':
-            return 0
-        __logoutIscsiTarget(self, lvolstruct_mirrors)
-
-    def __loginIscsiTarget(self, lvolstruct_mirrors):
-        try:
-            paths = []
-            paths_2 = []
-            paths_for_errout = []
-            for mirror in lvolstruct_mirrors:
-                if not mirror['lvolspec']['add']:
-                    # attachLogicalVolume case
-                    for extent in mirror['components']:
-                        path = extent['lvolspec']['iscsi_path'][0]
-                        path_2 = extent['lvolspec']['iscsi_path'][1]
-                        if not os.path.exists(path):
-                            if path not in paths:
-                                paths.append(path)
-                                paths_2.append(path_2)
-                else:
-                    # replaceMirrorDisk case
-                    path = mirror['lvolspec']['add']['lvolspec']['iscsi_path'][0]
-                    path_2 = mirror['lvolspec']['add']['lvolspec']['iscsi_path'][1]
-                    if not os.path.exists(path):
-                        if path not in paths:
-                            paths.append(path)
-                            paths_2.append(path_2)
-
-            for path in paths:
-                i = paths.index(path)
-                path_2 = paths_2[i]
-
-                ip_str = path.split(':')[0].split('/dev/disk/by-path/ip-')[1]
-                ip_str_2 = path_2.split(':')[0].split('/dev/disk/by-path/ip-')[1]
-                pdskid_str = path.split(':')[-1].split('-lun-1')[0]
-                executecommand("iscsiadm -m node -o new -T iqn.%s:%s -p %s" % (iqn_prefix_iscsi, pdskid_str, ip_str))
-                executecommand("iscsiadm -m node -o new -T iqn.%s:%s -p %s" % (iqn_prefix_iscsi, pdskid_str, ip_str_2))
-
-                command = "iscsiadm -m node -T iqn.%s:%s --login" % (iqn_prefix_iscsi, pdskid_str)
-                condition = "not (os.path.exists('"'%s'"') and os.path.exists('"'%s'"'))" % (path, path_2)
-                logger.info("os.path1('"'%s'"') and os.path2('"'%s'"'))" % (path, path_2))
-                executecommand_retry(command, condition, ISCSIADM_RETRY_TIMES)
-
-                paths_for_errout.append(path)
-
-            time_left = LOGIN_TIMEOUT
-            while len(paths) and time_left > 0:
-                for path in paths:
-                    i = paths.index(path)
-                    if os.path.exists(path):
-                        try:
-                            getMultiPathDevice(path)
-                            paths.pop(i)
-                        except:
-                            executecommand("multipath")
-                            time_left -= 1
-                            time.sleep(1)
-                    else:
-                        time_left -= 1
-                        time.sleep(1)
-        except Exception:
-            for path in paths_for_errout:
-                try:
-                    cleanupMultiPathDevice(path)
-                except:
-                    # fail through
-                    pass
-            raise
+        start_worker(self.__attach_worker, eventid, lvolstruct)
+        self.event_record.add_event(eventid, EVENT_STATUS['PROGRESS'])
+        self.event_record.unlock()
         return 0
 
-    def __logoutIscsiTarget(self, lvolstruct_mirrors):
-        global main_lock
-        def check_safe_logout(path):
-            devname = os.path.realpath(path).split('/dev/')[1]
-            mpaths = os.listdir("/sys/block/%s/holders/" % devname)
-            if len(mpaths) != 1:
-                # holders exist other than dm_multipath
-                return None
-            holders_dir = "/sys/block/%s/holders/%s/holders" % (devname, mpaths[0])
-            if len(os.listdir(holders_dir)) != 0:
-                # holders exist
-                return None
-            return True
-
+    def __attach_worker(self, eventid, lvolstruct):
+        failed = []
         try:
-            main_lock.acquire()
-            paths = []
-            for mirror in lvolstruct_mirrors:
-                if not mirror['lvolspec']['remove']:
-                    # detachLogicalVolume case
-                    for extent in mirror['components']:
-                        path = extent['lvolspec']['iscsi_path'][0]
-                        if path not in paths:
-                            if check_safe_logout(path):
-                                paths.append(path)
-                else:
-                    # replaceMirrorDisk case
-                    path = mirror['lvolspec']['remove']['lvolspec']['iscsi_path'][0]
-                    if path not in paths:
-                        if check_safe_logout(path):
-                            paths.append(path)
-
-            for path in paths:
-                cleanupMultiPathDevice(path)
-
-            time_left = LOGIN_TIMEOUT
-            while len(paths) and time_left > 0:
-                for path in paths:
-                    i = paths.index(path)
-                    if not os.path.exists(path):
-                        paths.pop(i)
-                    else:
-                        time_left -= 1
-                        time.sleep(1)
-
-            main_lock.release()
-            return 0
+            nodes = hsvr_dag.create_dag_from_lvolstruct(lvolstruct, False)
+            failed = dag.dag_execute(nodes, mynode.mynode_do, \
+                mynode.mynode_undo, self.dag_worker, mydaglogger)
+            for n, ei in failed:
+                t, v, tr = ei
+                raise t, v
+            self.event_record.set_event_status_and_result(eventid, EVENT_STATUS['DONE'],\
+                0, needlock = True)
         except Exception:
-            main_lock.release()
-            raise
-
-    def __invoke_mdadm_monitor_daemon(self, mirrors, lvolid):
-
-        def run_mdadm_monitor(lvolid, targets):
-            pid = executecommand("mdadm --monitor --daemonise --program %s %s" % (MDADM_EVENT_CMD, targets))
-            self.monitors[lvolid].append(pid)
-
-        # invoke mdadm monitor daemon
-
-        arg_max = get_arg_max()
-
-        bound_mirrors = []
-        if self.monitors.has_key(lvolid):
-            for mirror in mirrors:
-                if mirror['bind_status'] != BIND_STATUS['ALLOCATED']:
-                    bound_mirrors.append(mirror)
-
-            self.__kill_mdadm_monitor_daemon(lvolid)
-
-        targets = ""
-        self.monitors[lvolid] = []
-        for mirror in mirrors:
-            targets += "%s " % getMirrorDevPath(mirror['lvolid'])
-            if len(targets) > ( arg_max / 2 ):
-                run_mdadm_monitor(lvolid, targets)
-                targets = ""
-
-        if targets:
-            run_mdadm_monitor(lvolid, targets)
-
-        for mirror in bound_mirrors:
-            try:
-                executecommand("%s RebuildFinished %s/%08x" % (MDADM_EVENT_CMD, MD_DEVICE_DIR, mirror['lvolid']))
-            except Exception:
+            if failed:
+                for n, ei in failed:
+                    t, v, tr = ei
+                    logger.error(traceback.format_exception(t, v, tr))
+            else:
                 logger.error(traceback.format_exc())
-                # fail through
-                pass
-
-    def __kill_mdadm_monitor_daemon(self, lvolid):
-        if self.monitors.has_key(lvolid):
-            for pid in self.monitors[lvolid]:
-                os.kill(int(pid), signal.SIGKILL)
-            del self.monitors[lvolid]
-
-    def __blockdev_getsize(self, path):
-        mdlen = 0
-        for i in range(0, BLOCKDEV_RETRY_TIMES):
-            output = executecommand("blockdev --getsize %s" % path)
-            mdlen=int(output)
-            if mdlen > 0:
-                if i:
-                    logger.debug("retry OK")
-                break
-            logger.debug("retrying(%d/%d) ..." % (i + 1, BLOCKDEV_RETRY_TIMES))
-            time.sleep(1)
-
-        if mdlen == 0:
-            raise Exception, "retry over"
-
-        return mdlen
-
-    def __setup_mirror_devices(self, lvolstruct_mirrors, max_capacity_giga):
-        linear = ""
-        offset = 0
-
-        global main_lock
-        try:
-            main_lock.acquire()
-            # setup iSCSI devices
-            self.__connect(lvolstruct_mirrors)
-
-            # setup mirror devices
-            for mirror in lvolstruct_mirrors:
-                mirrordevs = ""
-                adddevs = []
-
-                mirrorlvpath = getMirrorDevPath(mirror['lvolid'])
-                if os.path.exists(mirrorlvpath):
-                    # mirror is already exists
-                    if mirror['bind_status'] == BIND_STATUS['ALLOCATED']:
-                        logger.info("__setup_mirror_devices: mirror device(%s) already exists. attempt to re-create the device." % mirrorlvpath)
-                    else:
-                        logger.info("__setup_mirror_devices: mirror device(%s) already exists. attempt to re-assemble the device." % mirrorlvpath)
-                    try:
-                        executecommand("mdadm -S %s" % mirrorlvpath)
-                    except:
-                        pass
-                    executecommand("rm -f %s" % mirrorlvpath)
-
-                # setup multipath devices
-                for extent in mirror['components']:
-                    devpath = setupDextDevice(extent)
-                    # wait for device ready
-                    self.__blockdev_getsize(devpath)
-                    if mirror['bind_status'] == BIND_STATUS['ALLOCATED']:
-                        # for mdadm --create
-                        mirrordevs += " " + devpath 
-                    elif extent['bind_status'] == BIND_STATUS['ALLOCATED']:
-                        # for mdadm --mannage --add
-                        adddevs.append(devpath)
-                    else:
-                        # for mdadm --assemble
-                        mirrordevs += " " + devpath
-
-                mdcommand = ""
-                if mirror['bind_status'] == BIND_STATUS['ALLOCATED']:
-                    mdcommand = "mdadm --create %s %s --assume-clean --raid-devices=%d %s" % (mirrorlvpath, MDADM_CREATE_OPTIONS, len(mirror['components']), mirrordevs)
-                    executecommand(mdcommand)
-                else:
-                    mdcommand = "mdadm --assemble %s %s %s" % (mirrorlvpath, MDADM_ASSEMBLE_OPTIONS, mirrordevs)
-                    executecommand(mdcommand)
-
-                for add in adddevs:
-                    executecommand("mdadm --manage --add %s %s" % (mirrorlvpath, add))
-
-                mdlen = self.__blockdev_getsize(mirrorlvpath)
-                if max_capacity_giga:
-                    limit = gtos(max_capacity_giga)
-                    assert(offset < limit), lineno()
-                    if offset + mdlen > limit:
-                        linear += "%d %d linear %s 0\\n" % (offset, limit - offset, mirrorlvpath)
-                        main_lock.release()
-                        return (linear, limit)
-
-                linear += "%d %d linear %s 0\\n" % (offset, mdlen, mirrorlvpath)
-                offset += mdlen
-        except:
-            main_lock.release()
-            raise
-
-        main_lock.release()
-        return (linear, offset)
-
-    def __setup_additional_mirror_devices(self, mirrors):
-        linear = ""
-        offset = 0
-
-        global main_lock
-        try:
-            main_lock.acquire()
-            # setup iSCSI devices
-            self.__connect(mirrors)
-
-            # setup mirror devices
-            for mirror in mirrors:
-                mirrordevs = ""
-
-                mirrorlvpath = getMirrorDevPath(mirror['lvolid'])
-                if os.path.exists(mirrorlvpath):
-                    # mirror is already exists
-                    if mirror['bind_status'] == BIND_STATUS['ALLOCATED']:
-                        logger.info("__setup_additional_mirror_devices: mirror device(%s) already exists. attempt to re-create the device." % mirrorlvpath)
-                        try:
-                            executecommand("mdadm -S %s" % mirrorlvpath)
-                        except:
-                            pass
-                        executecommand("rm -f %s" % mirrorlvpath)
-                    else:
-                        mdlen = self.__blockdev_getsize(mirrorlvpath)
-                        linear += "%d %d linear %s 0\\n" % (offset, mdlen, mirrorlvpath)
-                        offset += mdlen
-                        continue
-
-                assert(mirror['bind_status'] == BIND_STATUS['ALLOCATED']), lineno()
-
-                # setup multipath devices
-                for extent in mirror['components']:
-                    devpath = setupDextDevice(extent)
-                    # wait for device ready
-                    self.__blockdev_getsize(devpath)
-                    # for mdadm --create
-                    mirrordevs += " " + devpath
-
-                mdcommand = "mdadm --create %s %s --assume-clean --raid-devices=%d %s" % (mirrorlvpath, MDADM_CREATE_OPTIONS, len(mirror['components']), mirrordevs)        
-                executecommand(mdcommand)
-
-                mdlen = self.__blockdev_getsize(mirrorlvpath)
-                linear += "%d %d linear %s 0\\n" % (offset, mdlen, mirrorlvpath)
-                offset += mdlen
-        except:
-            main_lock.release()
-            raise
-
-        main_lock.release()
-        return (linear, offset)
-
-    def __cleanup_mirror_devices(self, lvolstruct_mirrors):
-        for mirror in lvolstruct_mirrors:
-            mirrordev = getMirrorDevPath(mirror['lvolid'])
-            if os.path.exists(mirrordev):
-                executecommand("mdadm -S %s" % mirrordev)
-                executecommand("rm -f %s" % mirrordev)
-            for extent in mirror['components']:
-                devname = getDextDevName(extent['lvolspec']['ssvrid'],extent['lvolid'])
-                if os.path.exists(getDmDevPath(devname)):
-                    self.__dmsetup_remove(devname)
-
-    def __mdadm_fail_add_remove(self, lvolstruct):
-        global main_lock
-        try:
-            main_lock.acquire()
-            # setup iSCSI devices
-            self.__connect([lvolstruct])
-
-            mirrordev = getMirrorDevPath(lvolstruct['lvolid'])
-            add = lvolstruct['lvolspec']['add']
-            remove = lvolstruct['lvolspec']['remove']
-
-            remove_devname = getDextDevName(remove['lvolspec']['ssvrid'],remove['lvolid'])
-
-            if not os.path.exists(getDmDevPath(remove_devname)):
-                raise Exception, "__mdadm_fail_add_remove: %s not exists" % (getDmDevPath(remove_devname))
-
-            executecommand("mdadm --manage --fail %s %s" % (mirrordev, getDmDevPath(remove_devname)))
-            add_devpath = setupDextDevice(add)
-            # wait for device ready
-            self.__blockdev_getsize(add_devpath)
-            executecommand("mdadm --manage --add %s %s" % (mirrordev, add_devpath))
-            executecommand("mdadm --manage --remove %s %s" % (mirrordev, getDmDevPath(remove_devname)))
-            self.__dmsetup_remove(remove_devname)
-        except:
-            main_lock.release()
-            raise
-        main_lock.release()
-
-    def __dmsetup_remove(self, devname):
-        command = "dmsetup remove %s" % devname
-        execute_retry_path_exist(command, getDmDevPath(devname), DMSETUP_RETRY_TIMES)
-
-    def attachLogicalVolume(self, data):
-        try:
-            lvolstruct = data['lvolstruct']
-            lvolstruct_linear = get_lvolstruct_of_lvoltype(lvolstruct, LVOLTYPE['LINEAR'])
-            lvolid_linear = lvolstruct_linear['lvolid']
-            lvolstruct_mirrors = lvolstruct_linear['components']
-            lvoldev = "%s/%s" % (VAS_DEVICE_DIR, lvolstruct_linear['lvolspec']['lvolname'])
-
-            if os.path.exists(lvoldev):
-                # volume is already attached
-                return 0
-
-            # invoke mdadm monitor daemon
-            self.__invoke_mdadm_monitor_daemon(lvolstruct_mirrors, lvolid_linear)
-
-            # setup mirror devices
-	    linear, current_capacity =  self.__setup_mirror_devices(lvolstruct_mirrors, lvolstruct_linear['capacity'])
-
-            # setup linear device
-            command = "echo -e \"%s\" | dmsetup create %s" % (linear, getLinearDevName(lvolid_linear))
-            execute_retry_not_path_exist(command, getLinearDevPath(lvolid_linear), DMSETUP_RETRY_TIMES)
-
-            # setup symlink to lvoldev
-	    srcpath = getLinearDevPath(lvolid_linear)
-            os.symlink(srcpath, lvoldev)
-
-        except Exception:
-            logger.error(traceback.format_exc())
-            try:
-                self.__cleanupLogicalVolume(lvolstruct)
-            except Exception:
-                pass
-            raise xmlrpclib.Fault(500, 'Internal Server Error')
+            self.event_record.set_event_status_and_result(eventid, EVENT_STATUS['ERROR'], \
+                500, needlock = True)
         return 0
 
     def detachLogicalVolume(self, data):
+        eventid, lvolstruct = mand_keys(data, 'eventid', 'lvolstruct')
+        self.event_record.lock()
+        if self.event_record.event_exist(eventid):
+            self.event_record.unlock()
+            return 0
+        start_worker(self.__detach_worker, eventid, lvolstruct)
+        self.event_record.add_event(eventid, EVENT_STATUS['PROGRESS'])
+        self.event_record.unlock()
+        return 0
+
+    def __detach_worker(self, eventid, lvolstruct):
+        failed = []
         try:
-            self.__cleanupLogicalVolume(data['lvolstruct'])
-        except Exception:
-            logger.error(traceback.format_exc())
-            raise xmlrpclib.Fault(500, 'Internal Server Error')
+            nodes = hsvr_dag.create_dag_from_lvolstruct(lvolstruct, True)
+            failed = dag.dag_execute(nodes, mynode.mynode_undo, noop, \
+                self.dag_worker, mydaglogger)
+            for n, ei in failed:
+                t, v, tr = ei
+                raise t, v
+            self.event_record.set_event_status_and_result(eventid, EVENT_STATUS['DONE'], \
+               0, needlock = True)
+        except xmlrpclib.Fault, inst:
+            self.event_record.set_event_status_and_result(eventid, EVENT_STATUS['ERROR'], \
+               inst.faultCode, needlock = True)
+        except Exception, inst:
+            if failed:
+                for n, ei in failed:
+                    t, v, tr = ei
+                    logger.error(traceback.format_exception(t, v, tr))
+            else:
+                logger.error(traceback.format_exc())
+            if os.path.exists(get_lvol_path_from_lvolstruct(lvolstruct)):
+                # symlink exists, so nothing done. 
+                # return EBUSY in this case acordings to the protocol between SM
+                self.event_record.set_event_status_and_result(eventid, \
+                    EVENT_STATUS['ERROR'], errno.EBUSY, needlock = True)
+            else:
+                self.event_record.set_event_status_and_result(eventid, \
+                    EVENT_STATUS['ERROR'], 500, needlock = True)
         return 0    
 
-    def __cleanupLogicalVolume(self, lvolstruct):
-        lvolstruct_linear = get_lvolstruct_of_lvoltype(lvolstruct, LVOLTYPE['LINEAR'])
-        lvolid_linear = lvolstruct_linear['lvolid']
-        lvolstruct_mirrors = lvolstruct_linear['components']
-        lvoldev = "%s/%s" % (VAS_DEVICE_DIR, lvolstruct_linear['lvolspec']['lvolname'])
-
-        if os.path.exists(lvoldev):
-            os.remove(lvoldev)
-
-        if os.path.exists(getLinearDevPath(lvolid_linear)):
-            self.__dmsetup_remove(getLinearDevName(lvolid_linear))
-
-        self.__cleanup_mirror_devices(lvolstruct_mirrors)
-        self.__disconnect(lvolstruct_mirrors)
-        self.__kill_mdadm_monitor_daemon(lvolid_linear)
-            
     def replaceMirrorDisk(self, data):
-        try:
-            lvolstruct = data['lvolstruct']
-            # replace disk extents
-            self.__mdadm_fail_add_remove(lvolstruct)
-        except Exception:
-            logger.error(traceback.format_exc())
-            self.__disconnect([lvolstruct])
-            raise xmlrpclib.Fault(500, 'Internal Server Error')
-
-        try:
-            # cleanup unused iSCSI devices
-            self.__disconnect([lvolstruct])
-        except Exception:
-            logger.error(traceback.format_exc())
-            # fail through
+        eventid, mirrorid, add_lvolstruct, remove_lvolstruct = \
+            mand_keys(data, 'eventid', 'mirrorid', 'add', 'remove')
+        self.event_record.lock()
+        if self.event_record.event_exist(eventid):
+            self.event_record.unlock()
+            return 0
+        dextid = add_lvolstruct['lvolid']
+        status = get_mirror_status(mirrorid)
+        if not status: # mirror not exist
+            self.event_record.unlock()
+            raise xmlrpclib.Fault(errno.ENOENT, 'ENOENT')
+        if not status.has_key(dextid) or status[dextid] == "faulty": # start rebuild
+            start_worker(self.__mirror_worker, eventid, mirrorid, add_lvolstruct, remove_lvolstruct)
+            self.event_record.add_event(eventid, EVENT_STATUS['PROGRESS'], 0, \
+                self.__check_mirror_status, (mirrorid, add_lvolstruct['lvolid']))
+        elif status[dextid] == "in_sync": # rebuild done already
+            self.event_record.add_event(eventid, EVENT_STATUS['DONE'], 0)
+        elif status[dextid] == "spare": # rebuild started already
+            self.event_record.add_event(eventid, EVENT_STATUS['PROGRESS'], 0, \
+                self.__check_mirror_status, (mirrorid, add_lvolstruct['lvolid']))
+        # else: that's all
+        self.event_record.unlock()
         return 0
+
+    def __check_mirror_status(self, eventid, mirrorid, dextid):
+        # this method called with event_record locked
+        try:
+            status = get_mirror_status(mirrorid)
+            if not status or not status.has_key(dextid): # mirror or dext gone ?
+                self.event_record.set_event_status_and_result(eventid, EVENT_STATUS['ERROR'], errno.ENOENT)
+            elif status[dextid] == 'in_sync': # done
+                self.event_record.set_event_status_and_result(eventid, EVENT_STATUS['DONE'], 0)
+            # else: rebuild progress, status not change
+        except Exception:
+            logger.error(traceback.format_exc())
+            self.event_record.set_event_status_and_result(eventid, EVENT_STATUS['ERROR'], 500)
+
+    def __mirror_worker(self, eventid, mirrorid, add_lvolstruct, remove_lvolstruct):
+        class MdadmNode(mynode.MyNode):
+            def __init__(self, op, mirrordev, component):
+                self.md_op = op
+                self.md_mirrordev = mirrordev
+                self.md_component = component
+                mynode.MyNode.__init__(self, "mdadm:%s:%s:%s" % \
+                    (op, mirrordev, component))
+            def do(self):
+                try:
+                    executecommand("mdadm --manage --%s %s %s" % \
+                        (self.md_op, self.md_mirrordev, \
+                        self.md_component))
+                except:
+                    if self.md_op == "fail" or self.md_op == "remove":
+                        # pass through dext remove.
+                        # if fail/remove fail by already removed, it is OK and dext remove should be OK.
+                        # otherwise dext remove will fail and return error to the caller
+                        return
+                    else:
+                        raise
+        def get_dext_path_from_lvolstruct(l):
+            return getDextDevPath(l['lvolspec']['ssvrid'], l['lvolid'])
+        failed = []
+        try:
+            mirrordev = getMirrorDevPath(mirrorid)
+            add_path = get_dext_path_from_lvolstruct(add_lvolstruct)
+            mdadd_node = MdadmNode("add", mirrordev, add_path)
+            add_nodes = hsvr_dag.create_dag_from_lvolstruct(add_lvolstruct, \
+                False)
+            for n in add_nodes:
+                mdadd_node.add_antecedent(n)
+            remove_nodes = []
+            if remove_lvolstruct['lvolid'] != 0:
+                remove_path = get_dext_path_from_lvolstruct(remove_lvolstruct)
+                if os.path.exists(remove_path):
+                    mdfail_node = MdadmNode("fail", mirrordev, remove_path)
+                    mdremove_node = MdadmNode("remove", mirrordev, remove_path)
+                else:
+                    mdfail_node = mynode.MyNode("mdfail_dummy")
+                    mdremove_node = mynode.MyNode("mdremove_dummy")
+                mdremove_node.add_antecedent(mdfail_node)
+                if remove_lvolstruct['lvolid'] != add_lvolstruct['lvolid']:
+                    remove_nodes = hsvr_dag.create_dag_from_lvolstruct( \
+                        remove_lvolstruct, True)
+                    for n in remove_nodes:
+                        n.add_antecedent(mdremove_node)
+                nodes = add_nodes + remove_nodes + \
+                    [mdfail_node, mdadd_node, mdremove_node]
+                mdadd_node.add_antecedent(mdremove_node)
+            else: # add only
+                nodes = add_nodes + [mdadd_node]
+            def replace_do(n):
+                if not n in remove_nodes:
+                    mynode.mynode_do(n)
+                else:
+                    mynode.mynode_undo(n)
+            def replace_undo(n):
+                if not n in remove_nodes:
+                    mynode.mynode_undo(n)
+            failed = dag.dag_execute(nodes, replace_do, replace_undo, \
+                self.dag_worker, mydaglogger)
+            for n, ei in failed:
+                t, v, tr = ei
+                raise t, v
+        except Exception:
+            self.event_record.set_event_status_and_result(eventid, EVENT_STATUS['ERROR'], \
+                500, needlock = True)
+            if failed:
+                for n, ei in failed:
+                    t, v, tr = ei
+                    logger.error(traceback.format_exception(t, v, tr))
+            logger.error(traceback.format_exc())
+        return 0
+
+    def getEventStatus(self, data):
+        eventid = mand_keys(data, 'eventid')
+        try:
+            return get_event_status(self.event_record, eventid)
+        except Exception:
+            logger.error(traceback.format_exc())
+            raise xmlrpclib.Fault(500, 'Internal Server Error')
 
 def usage():
     print 'usage: %s [-h|--host] [--help] ' % sys.argv[0]
 
 def sighandler(signum, frame):
-    global hsvr_agent_object
-    for pids in hsvr_agent_object.monitors.values():
-        for pid in pids:
-            os.kill(int(pid), signal.SIGKILL)
     sys.exit(0)
 
 class Tserver(ThreadingMixIn, SimpleXMLRPCServer.SimpleXMLRPCServer):
     pass
 
 def main():
-    global main_lock, hsvr_agent_object
+    global hsvr_agent_object
     try:
         opts, _args = getopt.getopt(sys.argv[1:], "h:", ["host=","help"])
     except getopt.GetoptError:
@@ -539,8 +309,6 @@ def main():
     hsvr_agent_object = HsvrAgent()
 
     socket.setdefaulttimeout(SOCKET_DEFAULT_TIMEOUT)
-
-    main_lock = threading.Lock()
 
     Tserver.allow_reuse_address=True
     server = Tserver((host, port_hsvr_agent))

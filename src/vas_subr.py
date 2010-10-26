@@ -28,7 +28,7 @@
 # OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 # SUCH DAMAGE.
 
-__version__ = '$Id: vas_subr.py 108 2010-07-22 09:22:17Z yamamoto2 $'
+__version__ = '$Id: vas_subr.py 321 2010-10-20 05:59:06Z yamamoto2 $'
 
 import time
 import socket
@@ -36,11 +36,34 @@ import xmlrpclib
 import errno
 import os
 import inspect
-import commands
 import re
 import pickle
+import select
+import threading
 from vas_conf import *
 from stat import *
+from vas_iscsi import select_iScsiTarget
+
+iScsiTarget = select_iScsiTarget(ISCSI_TARGET)
+
+def __reverse_dict(a):
+    return dict(zip(a.values(), a.keys()))
+
+def start_worker(func, *args):
+    th = threading.Thread(target = func, args = args)
+    th.setDaemon(True)
+    th.start()
+
+# check keys and return values
+def mand_keys(dict, *keys):
+    if len(keys) == 0:
+        raise xmlrpclib.Fault(errno.EINVAL, 'EINVAL')
+    for key in keys: 
+        if not dict.has_key(key):
+            raise xmlrpclib.Fault(errno.EINVAL, 'EINVAL')
+    if len(keys) == 1: # return a simple value
+        return dict[keys[0]]
+    return map((lambda x: dict[x]), keys)
 
 def get_targetid(input, prefix):
     try:
@@ -130,16 +153,61 @@ def stovb(sector):
     odd = sector - vbtos(vb)
     return [vb, odd]
 
-def executecommand(command):
-    status, output = commands.getstatusoutput(command)
-    if status != 0:
-        errstr = "%s [Status %s] %s" % (command,status,output)
+# motivation of this function: subprocess::Popen is not thread safe
+# much simpler and fast than Popen 
+def executecommand(command, status_ignore=False, close_fds=True):
+    so_r, so_w = os.pipe()
+    se_r, se_w = os.pipe()
+    pid = os.fork()
+    if pid == 0:
+        os.close(so_r)
+        os.close(se_r)
+        os.dup2(so_w, 1)
+        os.dup2(se_w, 2)
+        # this is heavy. it is need for "mdadm --monitor" only now
+        # if "mdadm --monitor" is removed, this(close_fds) will be removed too
+        if close_fds == True:
+            try:
+                num_fds = os.sysconf("SC_OPEN_MAX")
+            except:
+                num_fds = 64
+            for i in range(3, num_fds):
+                try:
+                    os.close(i)
+                except:
+                    pass
+        args = ["/bin/sh", "-c", command]
+        os.execvp(args[0], args)
+    # parent
+    os.close(so_w)
+    os.close(se_w)
+    so_str = ""
+    se_str = ""
+    rset = [so_r, se_r]
+    while rset:
+        rlist, _, _ = select.select(rset, [], [])
+        if so_r in rlist:
+            data = os.read(so_r, 1024)
+            if data == "":
+                os.close(so_r)
+                rset.remove(so_r)
+            so_str += data
+        if se_r in rlist:
+            data = os.read(se_r, 1024)
+            if data == "":
+                os.close(se_r)
+                rset.remove(se_r)
+            se_str += data
+    _, status = os.waitpid(pid, 0)
+    if status != 0 and status_ignore == False:
+        errstr = "%s [Status %d] %s" % (command, status, se_str.rstrip())
         raise Exception, errstr
-
     logger.debug(command)
+    return so_str.rstrip() 
 
-    return output
-
+# executecommand_retry:
+# execute a command.  if failed, retry upto count times as far as
+# the given condition is true.
 def executecommand_retry(command,condition,count):
     assert(count), lineno()
 
@@ -155,7 +223,7 @@ def executecommand_retry(command,condition,count):
             command_output = str(inst)
             logger.info(command_output)
 
-            if not eval(condition):
+            if not condition():
                 logger.info("quit retry(%d/%d)" % (i + 1, count))
                 return ""
             logger.info("retrying(%d/%d) ..." % (i + 1, count))
@@ -228,13 +296,6 @@ def get_lvolstruct_of_lvoltype(lvolstruct, type):
     else:
         return lvolstruct
 
-def addNewTargetIET(tid, iqn, pdskid):
-    executecommand("ietadm --op new --tid=%d --params Name=%s:%08x" % (tid, iqn, pdskid))
-    executecommand("ietadm --op update --tid=%d --params=%s" % (tid, IETADM_PARAMS_TID))
-
-def delNewTargetIET(tid):
-    executecommand("ietadm --op delete --tid=%d" % (tid))
-
 def activatePhysicalDisk(data):
 
     def save_data_file():
@@ -248,40 +309,43 @@ def activatePhysicalDisk(data):
     pdskid = data['pdskid']
     iqn = data['iqn']
 
-    if SCSI_DRIVER == 'srp':
-        activatePhysicalDiskSRP(disk_dev, pdskid)
-    elif SCSI_DRIVER == 'iet':
-        activatePhysicalDiskIET(disk_dev, iqn, pdskid)
-    save_data_file()
+    try:
+        tid = get_tid(pdskid)
+        # already registered.
+        logger.info("activatePhysicalDisk: %s:%08x is already activated. tid = %d" % (iqn, pdskid, tid))
+        return
+    except:
+        pass
+        # fail through
 
+    tid = gen_tid()
+    try:
+        path = createPdskLink(disk_dev, pdskid)
+        # setup iSCSI target
+        iScsiTarget.newTarget(tid, iqn, pdskid)
+        # setup iSCSI LUN and save data file
+        iScsiTarget.newLogicalUnit(pdskid, tid, path)
+        save_data_file()
+    except:
+        cleanupPhysicalDisk(pdskid, tid)
+        raise
+
+def cleanupPhysicalDisk(pdskid, tid):
+    if scan_tid(tid):
+        iScsiTarget.delTarget(tid)
+    removePdskLink(pdskid)
 
 def scan_tid(tid):
-    tid_re = re.compile("^tid:\d+$")
-
-    f = open("/proc/net/iet/volume", 'r')
-    while True:
-        line = f.readline().rstrip()
-        if not line:
-            break
-        tid_colon_num = line.split()[0]
-        if tid_re.match(tid_colon_num):
-            if int(tid_colon_num.split(':')[1], 10) == tid:
-                return True
+    t = iScsiTarget.getTidTable()
+    if t.has_key(tid):
+        return True
     return False
 
 def get_tid(pdskid):
-    tid_re = re.compile("^tid:\d+$")
-
-    f = open("/proc/net/iet/volume", 'r')
-    while True:
-        line = f.readline().rstrip()
-        if not line:
-            break
-        tid_colon_num = line.split()[0]
-        if tid_re.match(tid_colon_num):
-            if int(line.split(':')[-1], 16) == pdskid:
-                return int(line.split()[0].split(':')[1], 10)
-
+    t = iScsiTarget.getTidTable()
+    for tid, pdsk in t.iteritems():
+        if pdsk == pdskid:
+            return tid
     raise Exception, "get_tid: can not identify tid correspond to pdsk-%08x" % (pdskid)
 
 class getDiskSizeNotBlockDeviceException:
@@ -297,22 +361,10 @@ def getDiskSize(devpath):
     return int(output, 10)
 
 def gen_tid():
-    tid_re = re.compile("^tid:\d+$")
-
-    tids = []
-    f = open("/proc/net/iet/volume", 'r')
-    while True:
-        line = f.readline().rstrip()
-        if not line:
-            break
-        tid_colon_num = line.split()[0]
-        if tid_re.match(tid_colon_num):
-            tid = int(tid_colon_num.split(':')[1], 10)
-            tids += [tid]
+    t = iScsiTarget.getTidTable()
     for i in range(MIN_TID, MAX_TID):
-        if i not in tids:
+        if not t.has_key(i):
             return i
-
     raise Exception, "gen_tid: can not get a new tid"
 
 def createPdskLink(disk_dev, pdskid):
@@ -331,9 +383,6 @@ def removePdskLink(pdskid):
     logger.debug("removePdskLink: %s" % path)
     executecommand("rm %s" % (path))
 
-def addNewLogicalUnitIET(pdskid, tid, path):
-    executecommand("ietadm --op new --tid=%d --lun=1 --params Path=%s,ScsiId=%08x,ScsiSN=%08x,%s" % (tid, path, pdskid, pdskid, IETADM_PARAMS_LUN))
-
 class getDeviceListBadFileException:
     pass
 
@@ -344,20 +393,20 @@ def getDeviceList(path):
     pdskid_list = []
 
     if path not in (REGISTER_DEVICE_LIST, DEVICE_LIST_FILE):
-        logger.error("device path %r is not in %r, %r" % (path, REGISTER_DEVICE_LIST, DEVICE_LIST_FILE))
         raise getDeviceListBadFileException
 
     if not os.path.exists(path):
-        logger.error("device path %r does not exist" % (path))
         raise getDeviceListBadFileException
     
     f =  open(path, 'r')
     ln = 0
     while True:
         line = f.readline().strip()
-        ln += 1
         if not line:
             break
+        ln += 1
+        if line[0] == '#':
+            continue
         try:
             title, devpath = line.split(',')
         except ValueError:
@@ -385,47 +434,7 @@ def getDeviceList(path):
     if path == REGISTER_DEVICE_LIST:
         return pdsk_devpath_list
     else:
-	return (pdsk_devpath_list, pdskid_list)
-
-def getMultiPathDevice(dev_disk_by_path):
-    # input: /dev/disk/by-path/ip-10.100.10.3:3260-iscsi-iqn.2009-06.jp.co.valinux:00000006-lun-1
-    # output: /dev/mapper/mpath5
-    dev_path = ''
-
-    # iSCSI device path --> wwid
-    wwid = ''
-
-    command = "scsi_id -g -u /dev/%s" % os.path.realpath(dev_disk_by_path).split('/dev/')[1]
-    condition = "os.path.exists('"'%s'"')" % dev_disk_by_path
-    wwid = executecommand_retry(command, condition, SCSI_ID_RETRY_TIMES)
-
-    # wwid --> Multipath device path
-    dev_name = ''
-
-    command = "dmsetup info --noheadings -c -u mpath-%s -o name" % (wwid)
-    condition = "os.path.exists('"'%s'"')" % dev_disk_by_path
-    dev_name = executecommand_retry(command, condition, DMSETUP_RETRY_TIMES)
-
-    dev_path = getDmDevPath(dev_name)
-
-    return dev_path
-
-def cleanupMultiPathDevice(path):
-    pdskid_str = path.split(':')[-1].split('-lun-1')[0]
-    dev_name = getMultiPathDevice(path).split(DM_DEVICE_DIR + '/')[1]
-    # NOTE: the multipath command returns 1. (bug?)
-    commands.getstatusoutput("/sbin/multipath -f %s" % dev_name)
-    iscsiLogout(path, pdskid_str, iqn_prefix_iscsi)
-
-def setupDextDevice(lvolstruct_extent):
-    devname = getDextDevName(lvolstruct_extent['lvolspec']['ssvrid'],lvolstruct_extent['lvolid'])
-    devpath = getDmDevPath(devname)
-
-    dev_path = getMultiPathDevice(lvolstruct_extent['lvolspec']['iscsi_path'][0])
-    command = "echo 0 %s linear %s %s | dmsetup create %s" % (vbtos(lvolstruct_extent['capacity']),dev_path,vbtos(lvolstruct_extent['lvolspec']['offset']),devname)
-    execute_retry_not_path_exist(command, devpath, DMSETUP_RETRY_TIMES)
-
-    return devpath
+        return (pdsk_devpath_list, pdskid_list)
 
 def getRoundUpCapacity(capacity):
     unit = min(EXTENTSIZE)
@@ -439,10 +448,10 @@ def getDextDevName(ssvrid, dextid):
     return "%08x-%08x" % (ssvrid, dextid)
 
 def getMirrorDevName(lvolid):
-    return "%d" % (lvolid)
+    return "%08x" % (lvolid)
 
 def getLinearDevName(lvolid):
-    return "lvol-%08x" % (lvolid)
+    return "linear-%08x" % (lvolid)
 
 def getMetaDevName(lvolid):
     return "meta-%08x" % (lvolid)
@@ -457,7 +466,7 @@ def getDextDevPath(ssvrid, dextid):
     return getDmDevPath(getDextDevName(ssvrid, dextid))
 
 def getMirrorDevPath(lvolid):
-    return "%s%s" % (MD_DEVICE_DIR, getMirrorDevName(lvolid))
+    return "%s/%s" % (MD_DEVICE_DIR, getMirrorDevName(lvolid))
 
 def getLinearDevPath(lvolid):
     return getDmDevPath(getLinearDevName(lvolid))
@@ -482,47 +491,63 @@ def check_lvolname(lvolname):
     if lvol_re.match(lvolname):
         raise Exception, "invalid lvolname(%s)." % lvolname
 
-# IET and iscsi-initiator functions
-#
+def notify_sm(method, subargs):
+    logger.debug("notify_sm: %s: %s: start" % (method, subargs))
+    while True:
+        try:
+            send_request(host_storage_manager_list, port_storage_manager, \
+                method, subargs)
+            logger.debug("notify_sm: %s: %s: done" % (method, subargs))
+            break
+        except xmlrpclib.Fault, inst:
+            logger.error("notify_sm: %s: %s: %s" \
+                % (method, subargs, os.strerror(inst.faultCode)))
+        except Exception, inst:
+            logger.error("notify_sm: %s: %s: %s" % \
+                (method, subargs, inst))
+        time.sleep(SM_DOWN_RETRY_INTARVAL)
+        logger.debug("notify_sm: %s: %s retrying..." % (method, subargs))
 
-def activatePhysicalDiskIET(disk_dev, iqn, pdskid):
-    try:
-        tid = get_tid(pdskid)
-        # already registered.
-        logger.info("activatePhysicalDiskIET: %s:%08x is already activated. tid = %d" % (iqn, pdskid, tid))
-        return
-    except:
-        pass
-        # fail through
+def dmsetup_remove(devname):
+    command = "dmsetup remove %s" % devname
+    execute_retry_path_exist(command, getDmDevPath(devname), \
+        DMSETUP_RETRY_TIMES)
 
-    tid = gen_tid()
-    try:
-	path = createPdskLink(disk_dev, pdskid)
-        # setup iSCSI target
-        addNewTargetIET(tid, iqn, pdskid)
-        # setup iSCSI LUN and save data file
-        addNewLogicalUnitIET(pdskid, tid, path)
-    except:
-        cleanupPhysicalDiskIET(pdskid, tid)
-        raise
+def get_iscsi_path(ip_addr, pdskid):
+    return ISCSI_PATH % (ip_addr, iqn_prefix_iscsi,  pdskid)
 
-def cleanupPhysicalDiskIET(pdskid, tid):
-    if scan_tid(tid):
-        delNewTargetIET(tid)
-    removePdskLink(pdskid)
+def get_ipaddrlist():
+    hostname = socket.gethostname()
+    list = []
+    n = 1
+    while True:
+        try:
+            ip = socket.gethostbyname("%s-data%u" % (hostname, n))
+        except:
+            if list:
+                break
+            raise
+        list.append(ip)
+        n += 1
+    return list
 
-def iscsiLogout(path, pdskid_str, iqn_prefix_iscsi):
-    command = "iscsiadm -m node -T iqn.%s:%s --logout" % (iqn_prefix_iscsi, pdskid_str)
-    execute_retry_path_exist(command, path, ISCSIADM_RETRY_TIMES )
+def getSnapshotOriginOriginPath(lvolid):
+    return "%s/%08x" % (VAS_SNAPSHOT_DIR, lvolid)
 
-    executecommand("iscsiadm -m node -o delete -T iqn.%s:%s" % (iqn_prefix_iscsi, pdskid_str) )
+def getSnapshotOriginDevName(lvolid):
+    return "snapshot-origin-%08x" % lvolid
 
-
-def activatePhysicalDiskSRP(disk_dev, pdskid):
-    logger.info('activatePhysicalDiskSRP: creating symlink')
-    try:
-	path = createPdskLink(disk_dev, pdskid)
-    except:
-        removePdskLink(pdskid)
-        raise
-
+def blockdev_getsize(path):
+    len = 0
+    for i in range(0, BLOCKDEV_RETRY_TIMES):
+        output = executecommand("blockdev --getsize %s" % path)
+        len=int(output)
+        if len > 0:
+            if i:
+                logger.debug("retry OK")
+            break
+        logger.debug("retrying(%d/%d) ..." % (i + 1, BLOCKDEV_RETRY_TIMES))
+        time.sleep(1)
+    if len == 0:
+        raise Exception, "retry over"
+    return len

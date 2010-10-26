@@ -1,0 +1,14 @@
+
+$Id: README 51 2010-07-07 05:03:33Z yamamoto2 $
+
+this directory contains XCP SR driver for vastsky.
+
+how to install:
+	(for xcp 0.5rc1)
+	- copy VASSR.py and uuid.py into /opt/xensource/sm.
+	- copy multipath-vas.conf and multipath-vas.rules to /etc.
+	- create a VASSR symlink to VASSR.py so that xapi picks it.
+
+uuid.py is from
+	http://zesty.ca/python/uuid.README.txt
+	http://zesty.ca/python/uuid.py

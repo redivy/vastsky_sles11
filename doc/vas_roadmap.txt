@@ -1,6 +1,9 @@
-$Id: vas_roadmap.txt 93 2010-07-16 00:38:47Z yamamoto2 $
+$Id: vas_roadmap.txt 345 2010-10-22 05:03:52Z yamamoto2 $
 
 Vastsky roadmap (aka pie in the sky)
 
-- snapshot
-	probably using dm-snapshot kernel module.
+- create an option to put storage manager db on external db like mysql.
+
+- push xcp driver to xcp sm repository.
+
+- push eucalyptus driver to their repository.

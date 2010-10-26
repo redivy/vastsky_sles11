@@ -1,4 +1,20 @@
-$Id: vas_install.txt 127 2010-07-27 06:23:49Z yamamoto2 $
+$Id: vas_install.txt 364 2010-10-25 01:29:40Z h-takaha $
+
+Requirements:
+
+To run a vastsky system, you need at least two hosts.
+Vastsky consists of three kind of servers.  (see vas_overview.txt)
+While these three servers can be run on a single host if you want, you still
+need at least two hosts to run a vastsky system because vastsky needs at least
+two storage servers to maintain data redundancy as minimum supported data
+redundancy is two.
+
+Every hosts in a vastsky system need to run Linux.  (See the Installation
+section below for details.)  They need to be ip-reachable each other.
+
+Each storage servers need to have at least one accessible physical disk to
+export.
+
 
 Installation:
 
@@ -26,32 +42,70 @@ On each server,
 		- XCP 0.1.1's dom0 kernel is known to have a broken
 		  version of md driver, with which Vastsky doesn't work.
 		  XCP 0.5's dom0 should be ok.
+		- Older versions of md driver has a bug which causes an
+		  assertion failure in bitmap.c.  It was fixed between
+		  linux v2.6.20 and v2.6.21-rc1.
+		  (linux-2.6 da6e1a32fb8d7539a27f699c8671f64d7fefd0cc)
+		  CentOS 5.5 still has this bug.
 	    - (head server only) Working device mapper
-		In particular, linear and multipath targets.
+		In particular, linear, multipath and snapshot targets.
 	- Python
 		CentOS package: python
 	- (storage manager only) SQLite and its Python binding
 		CentOS package: sqlite
 		CentOS package: python-sqlite
+		Vastsky is tested against python-sqlite-1.1.7-1.2.1 shipped
+		with CentOS 5.3.  It's likely incompatible with
+		python-sqlite 2.x.
 	- (head server only) iSCSI initiator
 		CentOS package: iscsi-initiator-utils
-	- (storage server only) IET
-		http://iscsitarget.sourceforge.net/
-		It seems that CentOS has no official package for this.
+	- (storage server only) iSCSI target
+	    - Install either of IET (recommended) or TGT
+		- IET
+		  http://iscsitarget.sourceforge.net/
+		  It seems that CentOS has no official package for this.
+		- TGT
+		  CentOS package: iscsitarget
+
+- Install vastsky either from source or RPMs
+
+    - Install from RPMs  (recommended)
+
+	- Install some of the following RPMs
+
+		vastsky-common	Common library and configuration
+		vastsky-hsvr	Head server agent
+		vastsky-ssvr	Storage server agent
+		vastsky-sm	Storage manager
+		vastsky-cli	Storage manager command-line clients
+		vastsky-doc	Documentations (including this file)
+
+	  Basically,
+	  - -common package is required by other packages.
+	  - Head servers need -hsvr package.
+	  - Storage servers need -ssvr package.
+	  - The storage manager needs and -sm package.
+	  - The host on which you want to run user commands needs -cli package.
+
+    - Install from source
+
+	If you have the code in /tmp/vastsky,
+	# cd /tmp/vastsky/src
+	# ./test_install.py
 
 - (head server and storage server)
 	- Configure eg. /etc/hosts so that your hostnames are resolvable.
-	  If your hostname is "FOO", "FOO-data1" and "FOO-data2" should
-	  be resolvable to the IPv4 addresses on which agents listen on.
-	  If you don't need network path redundancy, you can use the same
-	  address for each of these names.
+	  Vastsky uses some special hostnames.  If your hostname is "FOO",
+	  "FOO-data1" and "FOO-data2" and so on should be resolvable to
+	  the IPv4 addresses on which agents listen on.  If you don't need
+	  network path redundancy, you only need to configure "FOO-data1".
 
 - (head server only)
 	- Configure udev and multipath so that iSCSI login automatically
 	  creates multipath instances on it.
 	  This step is not necessary if you solely use our XCP SR driver,
-	  which is found in the xcp/ directory of the Vastsky source code
-	  distributions.
+	  which is found in the drivers/xcp/ directory of the Vastsky source
+	  code distributions.
 
 	  The following is an example of /etc/multipath.conf.
 
@@ -72,6 +126,14 @@ On each server,
 			    }
 		    }
 
+	- It's recommended to configure iscsid so that it doesn't perform
+	  automatic login on system startup, which only has ill effects for
+	  vastsky's usage.
+
+	  The following is an example of /etc/iscsi/iscsid.conf.
+
+		    node.startup = manual
+
 - (storage server only)
 	- Prepare /var/lib/vas/register_device_list, which specifies the
 	  list of local disks to be exported and used for Vastsky.
@@ -87,40 +149,19 @@ On each server,
 
 - Prepare configuration files
 	- /etc/vas.conf
-		Copy from examples/ and modify host_list: to the actual
-		IPv4 address of your storage manager.
+		Copy an example of vas.conf into /etc and set the host_list:
+		element with the actual IPv4 address of your storage manager.
+		An example can be found at /usr/share/doc/vastsky/examples/
+		when installing from RPMs or at doc/examples/ of the code
+		when installing from source.
+
+                Using TGT as an iscsi target driver, the following line
+                should be added in the [ssvr_agent] section.
+
+		      target_type: tgt
 
 - Tweak your network filter etc to allow ports specified in /etc/vas.conf
   if necessary.
-
-- Install vastsky either from source or RPMs.
-
-    - Install from source
-
-	- Checkout the code
-		eg. /tmp/vastsky
-
-	- Install Vastsky
-		# cd /tmp/vastsky/src
-		# ./test_install.py
-
-    - Install from RPMs.
-
-	- Install some of the following RPMs.
-
-		vastsky-common	Common library and configuration
-		vastsky-hsvr	Head server agent
-		vastsky-ssvr	Storage server agent
-		vastsky-sm	Storage manager
-		vastsky-cli	Storage manager command-line clients
-		vastsky-doc	Documentations
-
-	  Basically,
-	  - -common package is required by other packages.
-	  - Head servers need -hsvr package.
-	  - Storage servers need -ssvr package.
-	  - The storage manager needs and -sm package.
-	  - The host on which you want to run user commands needs -cli package.
 
 - (storage manager)
 	- Initialize the storage manager db.
@@ -145,12 +186,15 @@ On each server,
 - Now, you should be able to use vastsky user commands described in
   vas_cli.txt.
 
+- If you need Eucalyptus EBS support, please refer to the README document
+  under the drivers/eucalyptus directory. 
+
 - Vastsky zero-fills physical disks before allowing users to use them.
   Depending the speed and capacity of the disks, it can take hours.
   Be patient.
 
   You can check the completion by running pdsk_list command and checking
-  the 'available' column.  The value will get non-zero when zero-filling of
-  the disk completed.
+  the 'available' column.  Wait for it growing enough before creating
+  logical volumes.
 
 - Enjoy!

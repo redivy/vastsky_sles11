@@ -1,0 +1,24 @@
+$Id: 3.0 359 2010-10-25 00:51:01Z yamamoto2 $
+
+Vastsky 3.0 release note
+
+Vastsky is a linux-based cluster storage system, which provides logical
+volumes (linux block devices) to users by aggregating disks over a network.
+
+Vastsky includes Xen Cloud Platform SR driver so that it can be used
+as a storage backend for XCP.  (tested with XCP 0.5 RC1)
+
+Moreover, Vastsky provides Eucalyptus support with which Vastsky's
+volume can be used as EBS volume.  (tested with Eucalyptus 2.0 OSS version)
+
+
+Changes from Vastsky 2.1 includes:
+	- Logical volume snapshot support
+	- Eucalyptus EBS support
+	- TGT iscsi target support
+	- Major internal rework to improve robustness
+
+CAUTION: The storage manager database used by Vastsky 3.0 is incompatible
+with the one created by Vastsky 2.1.  Unfortunately there's no easy way to
+convert it.  I.e. when upgrading from Vastsky 2.1, your will lose your
+logical volume configurations.

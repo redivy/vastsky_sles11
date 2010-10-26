@@ -28,14 +28,14 @@
 # OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 # SUCH DAMAGE.
 
-__version__ = '$Id: lvol_list.py 24 2010-07-05 02:58:29Z yamamoto2 $'
+__version__ = '$Id: lvol_list.py 319 2010-10-20 05:54:09Z yamamoto2 $'
 
 import sys
 import getopt
 import xmlrpclib
 import socket
 from vas_subr import *
-from vas_db import BIND_STATUS
+from vas_const import ATTACH_STATUS, ATTACH_EVENT
 
 def usage_listLogicalVolumes(argv):
     print >> sys.stderr, 'usage: %s [-h|--help] [LogicalVolumeID|LogicalVolumeName]' % (argv[0])
@@ -74,26 +74,37 @@ def getopt_listLogicalVolumes(argv):
     return obj
 
 def listLogicalVolumes_print(array):
-    column = "%-14s %-12s %12s %8s %-14s %-12s"
-    header = column % ('lvolid', 'lvolname', 'redundancy', 'capacity', ' hsvrid', 'failure')
+    column = "%-14s %-12s %12s %8s %-14s %-12s %-19s"
+    header = column % ('lvolid', 'lvolname', 'redundancy', 'capacity', ' hsvrid', 'failure', 'ctime')
     print header
     for entry in array:
         if entry['fault']:
             fault_str = 'yes'
         else:
             fault_str = '---'
-	capacity_str = '%d GB' % entry['capacity']
+        capacity_str = '%d GB' % entry['capacity']
         if entry['hsvrid']:
-            if entry['bind_status'] == BIND_STATUS['BINDING']:
-                hsvrid_str = '+hsvr-%08x' % entry['hsvrid']
-            elif entry['bind_status'] == BIND_STATUS['UNBINDING']:
-                hsvrid_str = '-hsvr-%08x' % entry['hsvrid']
+            if entry['bind_status'] == ATTACH_STATUS['ERROR']:
+                hsvrid_str = '*hsvr-%08x' % entry['hsvrid']
             else:
-                hsvrid_str = ' hsvr-%08x' % entry['hsvrid']
+                if entry['bind_event'] == ATTACH_EVENT['BINDING']:
+                    hsvrid_str = '+hsvr-%08x' % entry['hsvrid']
+                elif entry['bind_event'] == ATTACH_EVENT['UNBINDING']:
+                    hsvrid_str = '-hsvr-%08x' % entry['hsvrid']
+                else:
+                    hsvrid_str = ' hsvr-%08x' % entry['hsvrid']
         else:
             hsvrid_str = ' ---'
 
-        print column % ('lvol-%08x' % entry['lvolid'], entry['lvolname'], entry['redundancy'], capacity_str, hsvrid_str, fault_str)
+        print column % ('lvol-%08x' % entry['lvolid'], entry['lvolname'], entry['redundancy'], capacity_str, hsvrid_str, fault_str, entry['ctime'])
+
+        for a in entry['associated_to']:
+            if a['type'] == 'snapshot':
+                print "\tsnapshot of lvol-%08x" % a['lvolid']
+
+        for a in entry['associated_from']:
+            if a['type'] == 'snapshot':
+                print "\tsnapshot-origin of lvol-%08x" % a['lvolid']
 
 def main():
     socket.setdefaulttimeout(SOCKET_DEFAULT_TIMEOUT)

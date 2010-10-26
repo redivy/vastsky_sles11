@@ -28,14 +28,14 @@
 # OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 # SUCH DAMAGE.
 
-__version__ = '$Id: ssvr_list.py 24 2010-07-05 02:58:29Z yamamoto2 $'
+__version__ = '$Id: ssvr_list.py 300 2010-10-07 03:59:43Z h-takaha $'
 
 import sys
 import getopt
 import xmlrpclib
 import socket
 from vas_subr import *
-from vas_db import ALLOC_PRIORITY_STR
+from vas_const import ALLOC_PRIORITY_STR
 
 def usage_listStorageServers(argv):
     print >> sys.stderr, 'usage: %s [-h|--help] [StorageServerID]' % (argv[0])
@@ -82,8 +82,8 @@ def listStorageServers_print(array):
     else:
         print column % ('total %d GB' % capacity_total, 'available %d GB' % available_total, 'use% 0%')
 
-    column = "%-14s %-9s %-13s %-13s %5s %10s %10s %5s"
-    header = column % ('ssvrid', 'priority', 'ip_data_1', 'ip_data_2', 'resync', 'capacity', 'available', 'use%')
+    column = "%-14s %-9s %5s %10s %10s %5s"
+    header = column % ('ssvrid', 'priority', 'resync', 'capacity', 'available', 'use%')
     print header
     for entry in array:
         if entry['capacity']:
@@ -91,8 +91,10 @@ def listStorageServers_print(array):
         else:
             use = 0
         print column % ('ssvr-%08x' % entry['ssvrid'], ALLOC_PRIORITY_STR[entry['priority']], \
-        entry['ip_data'][0], entry['ip_data'][1], '%d' % entry['resync'], '%3d GB' % entry['capacity'],  \
+        '%d' % entry['resync'], '%3d GB' % entry['capacity'],  \
         '%d GB' % entry['available'], '%d%%' % use)
+        for ip in entry['ip_data']:
+            print "\tinet %s" % ip
 
 def main():
     socket.setdefaulttimeout(SOCKET_DEFAULT_TIMEOUT)

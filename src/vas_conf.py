@@ -28,14 +28,14 @@
 # OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 # SUCH DAMAGE.
 
-__version__ = '$Id: vas_conf.py 116 2010-07-26 01:11:16Z yamamoto2 $'
+__version__ = '$Id: vas_conf.py 334 2010-10-22 03:05:58Z yamamoto2 $'
 
 #
 # common for storage manager, head server and storage server nodes.
 #
 
 # versions
-XMLRPC_VERSION = 3	# please use odd numbers
+XMLRPC_VERSION = 5      # please use odd numbers
 
 # directories
 VAS_ROOT = '/opt/vas'
@@ -45,8 +45,9 @@ STORAGE_MANAGER_VAR =  '/var/lib/vas'
 STORAGE_MANAGER_CONF = '/etc'
 VAS_DEVICE_DIR = '/dev/vas'
 VAS_PDSK_DIR = STORAGE_MANAGER_VAR + '/pdsk'
+VAS_SNAPSHOT_DIR = STORAGE_MANAGER_VAR + '/snapshot'
 DM_DEVICE_DIR = '/dev/mapper'
-MD_DEVICE_DIR = '/dev/md'
+MD_DEVICE_DIR = '/dev/mirror'
 
 #
 # common parameters
@@ -54,20 +55,15 @@ MD_DEVICE_DIR = '/dev/md'
 SOCKET_DEFAULT_TIMEOUT = 300 #sec
 SM_DOWN_RETRY_INTARVAL = 60 #sec
 VALID_CHARACTERS_FOR_LVOLNAME = '.-_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
-LOG_MAX_FILESIZE = 1024 * 1024 #byte
+LOG_MAX_FILESIZE = 10485760 # 10MB
 LOG_BACKUP_COUNT = 5 #number of log files
-
-# hostname suffix for data paths
-DATA1_SUFFIX = '-data1'
-DATA2_SUFFIX = '-data2'
 
 #
 # for storage manager nodes.
 #
 
-# db files
+# db file
 DB_COMPONENTS = STORAGE_MANAGER_VAR + '/db/db_components'
-DB_EVENTS = STORAGE_MANAGER_VAR + '/db/db_events'
 
 # number of threads
 STORAGE_MANAGER_REQUEST_WORKERS = 10
@@ -87,7 +83,10 @@ MAX_REDUNDANCY = 9
 MAX_LENGTH = 1024 * 1024 
 
 # supported extent sizes in GB
-EXTENTSIZE = [1]
+EXTENTSIZE = [10]
+
+# maximum resource id value. XML-RPC can't handle values larger than 0x7fffffff.
+MAX_RESOURCEID = 0x7fffffff
 
 # maximum eventid number
 MAX_EVENTID = 1024 * 1024
@@ -96,25 +95,30 @@ MAX_EVENTID = 1024 * 1024
 # for head server and storage server nodes.
 #
 
-# Storage connectivity driver
-# 'srp', 'iet'
-SCSI_DRIVER = 'srp'
+# iSCSI target driver
+ISCSI_TARGET = "iet"
 
-# for srp connectivity
-SRP_PATH = '/dev/disk/by-path/srp-%s'
-
-# for IET target configuration
+# for iSCSI configuration
 ISCSI_PATH = '/dev/disk/by-path/ip-%s:3260-iscsi-iqn.%s:%08x-lun-1'
 MIN_TID = 1
 MAX_TID = 256
 LOGIN_TIMEOUT = 60
 
-# for iSCSI target configuration
+# for IET iSCSI target configuration
 IETADM_PARAMS_LUN = 'Type=blockio'
 IETADM_PARAMS_TID = 'MaxRecvDataSegmentLength=65536,MaxXmitDataSegmentLength=65536,MaxBurstLength=65536,FirstBurstLength=8192,InitialR2T=No,Wthreads=128,QueuedCommands=32'
 
+# for TGT iSCSI target configuration
+# "--bstype=aio" option should be default in the near future. Although this
+# option gives good performance and less cpu load, the kernels included in
+# RHEL5.4/CentOS 5.4 or earlier versions don't support the linux aio API.
+TGTADM_PARAMS_LUN = "--bstype=rdwr"
+#TGTADM_PARAMS_LUN = "--bstype=aio"
+
 # for dmsetup
-DMSETUP_RETRY_TIMES = 10
+DMSETUP_RETRY_TIMES = 2
+GETMULTIPATHDEVICE_RETRY_TIMES = 10
+GETMULTIPATHDEVICE_RETRY_INTERVAL = 10
 
 # for scsi_id
 SCSI_ID_RETRY_TIMES = 10
@@ -126,18 +130,16 @@ BLOCKDEV_RETRY_TIMES = 10
 ISCSIADM_RETRY_TIMES = 10
 
 # for mdadm
-MDADM_CREATE_OPTIONS = "--auto=md --bitmap=internal --metadata=1.1 --run --bitmap-chunk=65536 --delay=5 --level=1"
-MDADM_ASSEMBLE_OPTIONS = "--run --auto=md --metadata=1.1"
+MDADM_CREATE_OPTIONS = "--auto=md --bitmap=internal --metadata=0 --run --bitmap-chunk=65536 --delay=5 --level=1"
+MDADM_ASSEMBLE_OPTIONS = "--run --auto=md --metadata=0"
 
 # for hsvr_agent
-MDADM_EVENT_CMD = STORAGE_MANAGER_BIN + '/mdadm_event'
 GETCONF_ARG_MAX = '/usr/bin/getconf ARG_MAX'
 
 # for shredder
 SHREDDER_COUNT = 20
 DD_CMD = 'dd'
 DD_OPTIONS = 'oflag=direct'
-IGNORE_SHRED_STATUS = False
 
 # for hsvr_reporter/ssvr_reporter
 REGISTER_DEVICE_LIST = STORAGE_MANAGER_VAR + '/register_device_list'
@@ -150,7 +152,7 @@ SSVR_AGENT_CMD = STORAGE_MANAGER_BIN +'/ssvr_agent'
 DISKPATROLLER_CMD = STORAGE_MANAGER_BIN +'/DiskPatroller'
 LVOL_ERROR_CMD = STORAGE_MANAGER_BIN +'/lvol_error'
 SHUTDOWN_GRACE_COUNT = 3
-SHUTDOWN_CMD = 'echo 1' #'shutdown -g0 -h now'
+SHUTDOWN_CMD = 'shutdown -g0 -h now'
 HSVR_AGENT_PID = '/var/run/hsvr_agent.run'
 SSVR_AGENT_PID = '/var/run/ssvr_agent.run'
 DISKPATROLLER_PID = '/var/run/DiskPatroller.run'
@@ -170,6 +172,9 @@ SCRUB_EXTENT_SIZE = 10240 # MB
 SCRUB_STRIPE_SIZE = 16 # MB
 SCRUB_FIRST_SLEEP_TIME = 43200 # seconds
 SCRUB_SLEEP_TIME = 5 # seconds
+
+# snapshot
+SNAPSHOT_CHUNK_SIZE = 32        # in sector
 
 import sys
 import socket
@@ -214,12 +219,6 @@ try:
         csv_strings = config.get("storage_manager", "extentsize")
         EXTENTSIZE = [int(x) for x in csv_strings.split(',')]
 
-    if config.has_option("storage_manager", "ietadm_params_lun"):
-        IETADM_PARAMS_LUN = config.get("storage_manager", "ietadm_params_lun")
-
-    if config.has_option("storage_manager", "ietadm_params_tid"):
-        IETADM_PARAMS_TID = config.get("storage_manager", "ietadm_params_tid")
-
     if config.has_option("storage_manager", "shutdown_cmd"):
         SHUTDOWN_CMD = config.get("storage_manager", "shutdown_cmd")
 
@@ -228,10 +227,6 @@ try:
 
     if config.has_option("storage_manager", "vas_device_dir"):
         VAS_DEVICE_DIR = config.get("storage_manager", "vas_device_dir")
-
-    if config.has_option("ssvr_agent", "ignore_shred_status"):
-        if config.get("ssvr_agent", "ignore_shred_status") == 'True':
-            IGNORE_SHRED_STATUS = True
 
     if config.has_option("ssvr_agent", "scrub_first_sleep_time"):
         SCRUB_FIRST_SLEEP_TIME = config.getint("ssvr_agent", "scrub_first_sleep_time")
@@ -247,6 +242,18 @@ try:
 
     if config.has_option("ssvr_agent", "dd_cmd"):
         DD_CMD = config.get("ssvr_agent", "dd_cmd")
+
+    if config.has_option("ssvr_agent", "ietadm_params_lun"):
+        IETADM_PARAMS_LUN = config.get("ssvr_agent", "ietadm_params_lun")
+
+    if config.has_option("ssvr_agent", "ietadm_params_tid"):
+        IETADM_PARAMS_TID = config.get("ssvr_agent", "ietadm_params_tid")
+
+    if config.has_option("ssvr_agent", "target_type"):
+        ISCSI_TARGET = config.get("ssvr_agent", "target_type")
+
+    if config.has_option("ssvr_agent", "tgtadm_params_lun"):
+        TGTADM_PARAMS_LUN = config.get("ssvr_agent", "tgtadm_params_lun")
 
     loglevel = logging.INFO
     if config.has_option("syslog", "loglevel"):
@@ -268,15 +275,19 @@ except Exception, inst:
 
 try:
     logging.basicConfig(level=loglevel, filename='/dev/null')
-    handler_file = logging.handlers.RotatingFileHandler('/var/log/vas_%s.log' % socket.gethostname(), maxBytes=LOG_MAX_FILESIZE, backupCount=LOG_BACKUP_COUNT)
+    prog = sys.argv[0].split("/")[-1]
+    if prog in ("hsvr_agent", "ssvr_agent"):
+        handler_file = logging.handlers.RotatingFileHandler('/var/log/vas_%s.log' % socket.gethostname(), maxBytes=LOG_MAX_FILESIZE, backupCount=LOG_BACKUP_COUNT)
+    else:
+        handler_file = logging.handlers.RotatingFileHandler('/var/log/vas_%s.log' % socket.gethostname(), maxBytes=LOG_MAX_FILESIZE, backupCount=0)
     formatter_file = logging.Formatter('%(asctime)s %(name)s %(levelname)s %(message)s')
     handler_file.setFormatter(formatter_file)
     logging.getLogger('').addHandler(handler_file)
     if config.has_option("syslog", "host"):
-	handler_syslog = logging.handlers.SysLogHandler((host_syslog, logging.handlers.SYSLOG_UDP_PORT), logging.handlers.SysLogHandler.LOG_USER)
-	formatter_syslog = logging.Formatter('%(name)s %(levelname)s %(message)s')
-	handler_syslog.setFormatter(formatter_syslog)
-	logging.getLogger('').addHandler(handler_syslog)
+        handler_syslog = logging.handlers.SysLogHandler((host_syslog, logging.handlers.SYSLOG_UDP_PORT), logging.handlers.SysLogHandler.LOG_USER)
+        formatter_syslog = logging.Formatter('%(name)s %(levelname)s %(message)s')
+        handler_syslog.setFormatter(formatter_syslog)
+        logging.getLogger('').addHandler(handler_syslog)
     logger = logging.getLogger(sys.argv[0].split("/")[-1])
 except Exception, inst:
     print >> sys.stderr, "setting up log failed. %s" % (inst)

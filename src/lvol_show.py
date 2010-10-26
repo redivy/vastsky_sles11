@@ -28,7 +28,7 @@
 # OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 # SUCH DAMAGE.
 
-__version__ = '$Id: lvol_show.py 24 2010-07-05 02:58:29Z yamamoto2 $'
+__version__ = '$Id: lvol_show.py 319 2010-10-20 05:54:09Z yamamoto2 $'
 
 import sys
 import getopt
@@ -36,7 +36,7 @@ import xmlrpclib
 import socket
 import string
 from vas_subr import *
-from vas_db import LVOLTYPE, MIRROR_STATUS_STR
+from vas_const import LVOLTYPE, MIRROR_STATUS_STR
 
 def usage_showLogicalVolume(argv):
     print >> sys.stderr, 'usage: %s [-h|--help] {LogicalVolumeID|LogicalVolumeName}' % (argv[0])
@@ -73,6 +73,9 @@ def getopt_showLogicalVolume(argv):
 
     return obj
 
+lvolid = 0
+lvolname = ""
+
 def showLogicalVolume_print(lvolstruct):
 
     column = "%-14s %8s %8s | %-14s %-14s %8s %-14s %-5s"
@@ -81,7 +84,7 @@ def showLogicalVolume_print(lvolstruct):
             if lvolstruct['lvoltype'] == LVOLTYPE['DEXT']:
 
                 lvolspec = lvolstruct['lvolspec']
-                print column % ('', '', '', 'dext-%08x' % lvolstruct['lvolid'],'pdsk-%08x' % lvolspec['pdskid'],'%d GB' % lvolspec['offset'],'ssvr-%08x' % lvolspec['ssvrid'], MIRROR_STATUS_STR[lvolspec['status']])
+                print column % ('', '', '', 'dext-%08x' % lvolstruct['lvolid'],'pdsk-%08x' % lvolspec['pdskid'],'%d GB' % lvolspec['offset'],'ssvr-%08x' % lvolspec['ssvrid'], MIRROR_STATUS_STR[lvolstruct['mirror_status']])
 
     def __show_components_mirror(lvolstructs):
         print column % ('mirror', 'offset', 'capacity', 'disk-extent', 'physical-disk', 'offset', 'server', 'sync')
@@ -98,17 +101,25 @@ def showLogicalVolume_print(lvolstruct):
                 __show_components_dext(lvolstructs)
 
     def __show_component_linear(lvolstruct):
+        assert(lvolstruct['lvoltype'] == LVOLTYPE['LINEAR'])
         if lvolstruct['lvoltype'] == LVOLTYPE['LINEAR']:
 
             lvolspec = lvolstruct['lvolspec']
-	    capacity_str = '%d GB' % lvolstruct['capacity']
+            capacity_str = '%d GB' % lvolstruct['capacity']
                 
-            print "lvolid: lvol-%08x lvol_name: %s capacity: %s redundancy: %d" % (lvolstruct['lvolid'], lvolspec['lvolname'], capacity_str, len(lvolstruct['components'][0]['components']))
-
+            print "lvolid: lvol-%08x lvol_name: %s capacity: %s redundancy: %d" % (lvolid, lvolname, capacity_str, len(lvolstruct['components'][0]['components']))
             __show_components_mirror(lvolstruct['components'])
         else:
             __show_components_mirror([lvolstruct])
 
+    assert(lvolstruct['lvoltype'] == LVOLTYPE['LVOL'])
+    lvolid = lvolstruct['lvolid']
+    lvolname = lvolstruct['lvolspec']['lvolname']
+    lvolstruct = lvolstruct['components'][0]
+    assert(lvolstruct['lvoltype'] in \
+        [LVOLTYPE['SNAPSHOT'], LVOLTYPE['SNAPSHOT-ORIGIN']])
+    lvolstruct = lvolstruct['components'][0]
+    assert(lvolstruct['lvoltype'] == LVOLTYPE['LINEAR'])
     return __show_component_linear(lvolstruct)
 
 def main():

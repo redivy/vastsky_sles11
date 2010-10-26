@@ -28,7 +28,7 @@
 # OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 # SUCH DAMAGE.
 
-__version__ = '$Id'
+__version__ = '$Id: shutdownAll.py 279 2010-09-29 05:48:11Z yamamoto2 $'
 
 import sys
 import getopt
