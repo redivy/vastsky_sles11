@@ -141,7 +141,7 @@ class DextDbNode(LVDbNode):
         ip_addrs = db.ipdata.ssvr_ipdata(pdsklst['ssvrid'])
         ip_paths = []
         for ip in ip_addrs:
-            path = get_iscsi_path(ip, dskmap['pdskid'])
+            path = get_iscsi_path(ip, dskmap['pdskid'], pdsklst['srp_name'])
             ip_paths.append(path)
         return {'pdskid': dskmap['pdskid'], 'offset': dskmap['offset'], \
             'ssvrid': pdsklst['ssvrid'], 'iscsi_path': ip_paths}

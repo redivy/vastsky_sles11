@@ -47,7 +47,7 @@ VAS_DEVICE_DIR = '/dev/vas'
 VAS_PDSK_DIR = STORAGE_MANAGER_VAR + '/pdsk'
 VAS_SNAPSHOT_DIR = STORAGE_MANAGER_VAR + '/snapshot'
 DM_DEVICE_DIR = '/dev/mapper'
-MD_DEVICE_DIR = '/dev/mirror'
+MD_DEVICE_DIR = '/dev/md'
 
 #
 # common parameters
@@ -83,7 +83,7 @@ MAX_REDUNDANCY = 9
 MAX_LENGTH = 1024 * 1024 
 
 # supported extent sizes in GB
-EXTENTSIZE = [10]
+EXTENTSIZE = [1]
 
 # maximum resource id value. XML-RPC can't handle values larger than 0x7fffffff.
 MAX_RESOURCEID = 0x7fffffff
@@ -94,6 +94,12 @@ MAX_EVENTID = 1024 * 1024
 #
 # for head server and storage server nodes.
 #
+# Storage connectivity driver
+# 'srp', 'iscsi'
+SCSI_DRIVER = 'srp'
+
+# for srp connectivity
+SRP_PATH = '/dev/disk/by-path/srp-%s'
 
 # iSCSI target driver
 ISCSI_TARGET = "iet"
@@ -130,8 +136,8 @@ BLOCKDEV_RETRY_TIMES = 10
 ISCSIADM_RETRY_TIMES = 10
 
 # for mdadm
-MDADM_CREATE_OPTIONS = "--auto=md --bitmap=internal --metadata=0 --run --bitmap-chunk=65536 --delay=5 --level=1"
-MDADM_ASSEMBLE_OPTIONS = "--run --auto=md --metadata=0"
+MDADM_CREATE_OPTIONS = "--auto=md --bitmap=internal --metadata=1.1 --run --bitmap-chunk=65536 --delay=5 --level=1"
+MDADM_ASSEMBLE_OPTIONS = "--run --auto=md --metadata=1.1"
 
 # for hsvr_agent
 GETCONF_ARG_MAX = '/usr/bin/getconf ARG_MAX'
@@ -152,7 +158,7 @@ SSVR_AGENT_CMD = STORAGE_MANAGER_BIN +'/ssvr_agent'
 DISKPATROLLER_CMD = STORAGE_MANAGER_BIN +'/DiskPatroller'
 LVOL_ERROR_CMD = STORAGE_MANAGER_BIN +'/lvol_error'
 SHUTDOWN_GRACE_COUNT = 3
-SHUTDOWN_CMD = 'shutdown -g0 -h now'
+SHUTDOWN_CMD = 'echo 1' #'shutdown -g0 -h now'
 HSVR_AGENT_PID = '/var/run/hsvr_agent.run'
 SSVR_AGENT_PID = '/var/run/ssvr_agent.run'
 DISKPATROLLER_PID = '/var/run/DiskPatroller.run'

@@ -309,6 +309,21 @@ def activatePhysicalDisk(data):
     pdskid = data['pdskid']
     iqn = data['iqn']
 
+    if SCSI_DRIVER == 'srp':
+        activatePhysicalDiskSRP(disk_dev, pdskid)
+    elif SCSI_DRIVER == 'iet':
+        activatePhysicalDiskISCSI(disk_dev, iqn, pdskid)
+    save_data_file()
+
+def activatePhysicalDiskSRP(disk_dev, pdskid):
+    logger.info('activatePhysicalDiskSRP: creating symlink')
+    try:
+	path = createPdskLink(disk_dev, pdskid)
+    except:
+        removePdskLink(pdskid)
+        raise
+
+def activatePhysicalDiskISCSI(disk_dev, iqn, pdskid):
     try:
         tid = get_tid(pdskid)
         # already registered.
@@ -325,12 +340,11 @@ def activatePhysicalDisk(data):
         iScsiTarget.newTarget(tid, iqn, pdskid)
         # setup iSCSI LUN and save data file
         iScsiTarget.newLogicalUnit(pdskid, tid, path)
-        save_data_file()
     except:
-        cleanupPhysicalDisk(pdskid, tid)
+        cleanupPhysicalDiskISCSI(pdskid, tid)
         raise
 
-def cleanupPhysicalDisk(pdskid, tid):
+def cleanupPhysicalDiskISCSI(pdskid, tid):
     if scan_tid(tid):
         iScsiTarget.delTarget(tid)
     removePdskLink(pdskid)
@@ -448,7 +462,7 @@ def getDextDevName(ssvrid, dextid):
     return "%08x-%08x" % (ssvrid, dextid)
 
 def getMirrorDevName(lvolid):
-    return "%08x" % (lvolid)
+    return "%d" % (lvolid)
 
 def getLinearDevName(lvolid):
     return "linear-%08x" % (lvolid)
@@ -466,7 +480,7 @@ def getDextDevPath(ssvrid, dextid):
     return getDmDevPath(getDextDevName(ssvrid, dextid))
 
 def getMirrorDevPath(lvolid):
-    return "%s/%s" % (MD_DEVICE_DIR, getMirrorDevName(lvolid))
+    return "%s%s" % (MD_DEVICE_DIR, getMirrorDevName(lvolid))
 
 def getLinearDevPath(lvolid):
     return getDmDevPath(getLinearDevName(lvolid))
@@ -513,8 +527,12 @@ def dmsetup_remove(devname):
     execute_retry_path_exist(command, getDmDevPath(devname), \
         DMSETUP_RETRY_TIMES)
 
-def get_iscsi_path(ip_addr, pdskid):
-    return ISCSI_PATH % (ip_addr, iqn_prefix_iscsi,  pdskid)
+def get_iscsi_path(ip_addr, pdskid, srp_name):
+    if SCSI_DRIVER == 'iet':
+        return ISCSI_PATH % (ip_addr, iqn_prefix_iscsi,  pdskid)
+    elif SCSI_DRIVER == 'srp':
+        return SRP_PATH % ( srp_name )
+     
 
 def get_ipaddrlist():
     hostname = socket.gethostname()

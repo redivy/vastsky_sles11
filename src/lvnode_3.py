@@ -98,7 +98,7 @@ def getMultiPathDevice(dev_disk_by_path):
     # iSCSI device path --> wwid
     wwid = ''
 
-    command = "scsi_id -g -u -s /block/%s" % os.path.realpath(dev_disk_by_path).split('/dev/')[1]
+    command = "scsi_id -g -u /dev/%s" % os.path.realpath(dev_disk_by_path).split('/dev/')[1]
     def condition():
         return os.path.exists(dev_disk_by_path)
     wwid = executecommand_retry(command, condition, SCSI_ID_RETRY_TIMES)
@@ -123,6 +123,7 @@ def cleanupMultiPathDevice(path):
     # NOTE: the multipath command returns 1. (bug?)
     executecommand("/sbin/multipath -f %s" % dev_name, status_ignore=True)
 
+def logoutIscsiTarget(path):
     command = "iscsiadm -m node -T iqn.%s:%s --logout" % (iqn_prefix_iscsi, pdskid_str)
     execute_retry_path_exist(command, path, ISCSIADM_RETRY_TIMES )
 
@@ -140,7 +141,8 @@ class IscsiNode(mynode.MyNode):
     def do(self):
         h = iscsi_lock.acquire(self.iscsi_path)
         try:
-            loginIscsiTarget(self.iscsi_path)
+            if SCSI_DRIVER == 'scsi':
+                loginIscsiTarget(self.iscsi_path)
             self.path = getMultiPathDevice(self.iscsi_path[0])
             # keep a reference to prevent a detach operation from tearing down
             # our mpath+iscsi before we set up dext on it.
@@ -171,23 +173,26 @@ class IscsiNode(mynode.MyNode):
         try:
             if check_safe_logout(self.iscsi_path[0]):
                 cleanupMultiPathDevice(self.iscsi_path[0])
-                time_left = LOGIN_TIMEOUT
-                paths = self.iscsi_path[:]
-                while len(paths) and time_left > 0:
-                    for path in paths:
-                        i = paths.index(path)
-                        if not os.path.exists(path):
-                            paths.pop(i)
-                        else:
-                            time_left -= 1
-                            time.sleep(1)
-                if paths:
-                    logger.error("IscsiNode logout timeout: %s", paths)
+                if SCSI_DRIVER == 'scsi':
+                    logoutIscsiTarget(self.iscsi_path[0])
+                    time_left = LOGIN_TIMEOUT
+                    paths = self.iscsi_path[:]
+                    while len(paths) and time_left > 0:
+                        for path in paths:
+                            i = paths.index(path)
+                            if not os.path.exists(path):
+                                paths.pop(i)
+                            else:
+                                time_left -= 1
+                                time.sleep(1)
+                    if paths:
+                        logger.error("IscsiNode logout timeout: %s", paths)
             self.path = None
         except:
             iscsi_lock.release(h)
             raise
         iscsi_lock.release(h)
+
 
 class DextNode(lvnode.LVNode):
     def __init__(self, lvolstruct):

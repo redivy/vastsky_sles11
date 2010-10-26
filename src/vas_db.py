@@ -59,8 +59,9 @@ class Db_base:
     def connect(self):
         if self.conn:
             return
-        m = __import__("sqlite", globals(), locals(), [])
-        self.conn = m.connect(self.path)
+        m = __import__("sqlite3", globals(), locals(), [])
+        self.conn = m.connect(self.path, check_same_thread = False)
+        self.conn.text_factory = str
         self.c = self.conn.cursor()
         logger.info("loaded %s DB library, API version %s" % ("sqlite", m.apilevel))
 
@@ -79,6 +80,7 @@ class Db_base:
         self.tables.append(t)
 
     def begin_transaction(self):
+        return True
         assert(self.conn.inTransaction == 0), lineno()
 
     def commit(self):
@@ -94,7 +96,8 @@ HSVRLST_DEF = {'name': 'hsvrlst', 'fields': [('hsvrid', 'int'), ('priority', 'in
     ('latency', 'int')], \
     'primary_key': 'hsvrid'}
 PDSKLST_DEF = {'name': 'pdsklst', 'fields': [('ssvrid', 'int'), ('pdskid', 'int'), \
-    ('capacity', 'int'), ('local_path', 'varchar(1024)'), ('priority', 'int')], \
+    ('capacity', 'int'), ('srp_name', 'varchar(1024)'), \
+    ('local_path', 'varchar(1024)'), ('priority', 'int')], \
     'primary_key': 'pdskid'}
 LVOLLST_DEF = {'name': 'lvollst', 'fields': [('lvolid', 'int'), \
     ('lvolname', 'varchar(64)'), ('redundancy', 'int'), ('capacity', 'int'), \
@@ -181,7 +184,7 @@ class Db_table:
                 insert_str2 += "%s%%d" % (comma)
                 pythontypes.append(types.IntType)
             else:
-                insert_str2 += "%s%%s" % (comma)
+                insert_str2 += "%s'%%s'" % (comma)
                 pythontypes.append(types.StringType)
             if key == table_def['primary_key']:
                 type += " primary key"
@@ -201,7 +204,7 @@ class Db_table:
         assert(len(args) == len(self.db_pythontypes))
         for v, t in zip(args, self.db_pythontypes):
             assert(type(v) == t)
-        self.db.c.execute(self.sql_insert_str, args)
+        self.db.c.execute(self.sql_insert_str % args)
 
     def delete_rows(self, key, value):
         self.db.c.execute("delete from %s where %s = %r" % (self.db_name, key, value))
@@ -237,7 +240,7 @@ class Db_table:
     def rowcount(self):
         sql = "select * from %s" % (self.db_name)
         self.db.c.execute(sql)
-        return(self.db.c.rowcount)
+        return( len( self.db.c.fetchall() ) )
 
 class Db_attach(Db_table):
     def __init__(self, db):
@@ -541,10 +544,11 @@ where
     a.mp=dskspace.percent
         """ % (capacity, sqlstr)
         self.c.execute(sql)
-        if self.c.rowcount < 1:
+        result = self.c.fetchall()
+        if len( result ) < 1:
             # ENOSPC
             raise Exception, "allocate_dext: no free space"
-        pdskid, ssvrid = self.c.fetchone()
+        pdskid, ssvrid = result[0]
 
         # select the largest free extent
         sql = """
@@ -558,10 +562,11 @@ order by
     capacity desc
         """ % (EXT_STATUS['FREE'], pdskid)
         self.c.execute(sql)
-        if self.c.rowcount < 1:
+        result = self.c.fetchall()
+        if len( result ) < 1:
             # ENOSPC
             raise Exception, "allocate_dext: no free space"
-        dextid, offset, size = self.c.fetchone()
+        dextid, offset, size = result[0]
         if size > capacity:
             # divide the extent before use
             self.dskmap.update_value('dextid', dextid, 'capacity', capacity)

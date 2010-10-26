@@ -330,7 +330,7 @@ class StorageManager:
                 ip_addrs = self.db.ipdata.ssvr_ipdata(dsk['ssvrid'])
                 ip_paths = []
                 for ip in ip_addrs:
-                    path = get_iscsi_path(ip, dext['pdskid'])
+                    path = get_iscsi_path(ip, dext['pdskid'], dsk['srp_name'])
                     ip_paths.append(path)
                 lvolspec_add = { 'pdskid': 0, 'offset': dext['offset'], 'ssvrid': dsk['ssvrid'], \
                     'iscsi_path': ip_paths}
@@ -349,7 +349,7 @@ class StorageManager:
                     ip_addrs = self.db.ipdata.ssvr_ipdata(dsk['ssvrid'])
                     ip_paths = []
                     for ip in ip_addrs:
-                        path = get_iscsi_path(ip, dext['pdskid'])
+                        path = get_iscsi_path(ip, dext['pdskid'], dsk['srp_name'])
                         ip_paths.append(path)
                     lvolspec_remove = { 'pdskid': 0, 'offset': 0, 'ssvrid': dsk['ssvrid'], \
                         'iscsi_path': ip_paths}
@@ -1294,7 +1294,7 @@ class StorageManager:
                 else:
                     available = 0
                 entry = {'ssvrid': pdsk['ssvrid'], 'pdskid': pdsk['pdskid'], 'priority': pdsk['priority'], \
-                    'local_path': pdsk['local_path'], \
+                    'local_path': pdsk['local_path'], 'srp_name': pdsk['srp_name'], \
                     'resync': self.__get_resync_load_pdsk(pdsk['pdskid']), \
                     'capacity': pdsk['capacity'], 'available': available}
                 array.append(entry)
@@ -1843,7 +1843,7 @@ class StorageManager:
                 ip_addrs = self.db.ipdata.ssvr_ipdata(data['ssvrid'])
                 # assert len(ip_addrs) == 2
                 self.db.pdsklst.put_row((data['ssvrid'], pdskid, size_in_giga, \
-                   data['local_path'], vas_db.ALLOC_PRIORITY['HIGH']))
+                   data['srp_name'], data['local_path'], vas_db.ALLOC_PRIORITY['HIGH']))
                 offset = 0
                 unit = max(EXTENTSIZE)
                 while offset < size_in_giga:
